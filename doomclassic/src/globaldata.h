@@ -29,43 +29,14 @@ If you have questions concerning this license or the applicable additional terms
 #ifndef _GLOBAL_DATA_H
 #define _GLOBAL_DATA_H
 
-
-#include "doomtype.h"
-#include "d_net.h"
-#include "m_fixed.h"
-#include "info.h"
-#include "sounds.h"
-#include "r_defs.h" 
-#include "z_zone.h"
-#include "d_player.h"
-#include "m_cheat.h"
 #include "doomlib.h"
-#include "d_main.h"
-#include "hu_lib.h"
-#include "hu_stuff.h"
-#include "p_spec.h"
-#include "p_local.h"
-#include "r_bsp.h"
-#include "st_stuff.h"
-#include "st_lib.h"
-#include "w_wad.h"
-#include "dstrings.h"
 
-#include "typedefs.h"
-#include "defs.h"
-#include "structs.h"
-
+// Carl: needed for Doom 3 BFG Edition's Common.cpp
 struct Globals {
 	void InitGlobals();
 #include "vars.h"
 };
 
 extern Globals *g;
-
-#define GLOBAL( type, name ) type name
-#define GLOBAL_ARRAY( type, name, count ) type name[count]
-
-extern void localCalculateAchievements(bool epComplete);
-
 
 #endif

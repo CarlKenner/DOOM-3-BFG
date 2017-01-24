@@ -31,44 +31,25 @@ If you have questions concerning this license or the applicable additional terms
 
 //#include "doomlib.h"
 
-#include <vector>
-#include <string>
-
+// Carl: needed for Doom 3 BFG Edition
 class idUserCmdMgr;
 
+// Carl: needed for Doom 3 BFG Edition's Common.cpp
 class DoomInterface
 {
 public:
 			DoomInterface();
 	virtual ~DoomInterface();
 
-	typedef int ( *NoParamCallback)();
-	
-	void Startup( int players, bool multiplayer = false );
-	bool Frame( int time, idUserCmdMgr * userCmdMgr );
+	// Carl: needed for Doom 3 BFG Edition's Common.cpp
+	void Startup(int players, bool multiplayer = false);
+
+	// Carl: needed for Doom 3 BFG Edition's Common.cpp
+	bool Frame(int time, idUserCmdMgr * userCmdMgr);
+
+	// Carl: needed for Doom 3 BFG Edition's Common.cpp
 	void Shutdown();
-	void QuitCurrentGame();
-	void EndDMGame();
 
-	// PS3
-	//void InitGraphics( int player = -1, int width = TEXTUREWIDTH, int height = TEXTUREHEIGHT, D3DCOLOR *pBuffer = NULL, D3DCOLOR *pBuffer2 = NULL );
-	void SetPostGlobalsCallback( NoParamCallback cb );
-#ifdef ID_ENABLE_DOOM_CLASSIC_NETWORKING
-	void SetNetworking( DoomLib::RecvFunc recv, DoomLib::SendFunc send, DoomLib::SendRemoteFunc sendRemote );
-#endif
-	int GetNumPlayers() const;
-
-	static int CurrentPlayer();
-
-	void	SetMultiplayerPlayers(int localPlayerIndex, int playerCount, int localPlayer, std::vector<std::string> playerAddresses );
-
-protected:
-	int					numplayers;
-
-	bool				bFinished[4];
-
-	int					lastTicRun;
 };
-
 
  #endif

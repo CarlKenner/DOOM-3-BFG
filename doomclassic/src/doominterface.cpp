@@ -28,46 +28,38 @@ If you have questions concerning this license or the applicable additional terms
 
 #include "Precompiled.h"
 
-#include <stdio.h>
-
 #include "globaldata.h"
 #include "doominterface.h"
-#include "Main.h"
-#include "m_menu.h"
-#include "g_game.h"
 
-extern void I_SetTime( int );
+#define GLOBAL_IMAGE_SCALER	3
 
-bool waitingForWipe;
+#define ORIGINAL_WIDTH		320
+#define ORIGINAL_HEIGHT		200
 
-static const int dargc = 7;
-static const char* dargv[4][7] =
-{
-	{ "doomlauncher", "-net", "0", "127.0.0.1", "127.0.0.1", "127.0.0.1", "127.0.0.1" },
-	{ "doomlauncher", "-net", "1", "127.0.0.1", "127.0.0.1", "127.0.0.1", "127.0.0.1" },
-	{ "doomlauncher", "-net", "2", "127.0.0.1", "127.0.0.1", "127.0.0.1", "127.0.0.1" },
-	{ "doomlauncher", "-net", "3", "127.0.0.1", "127.0.0.1", "127.0.0.1", "127.0.0.1" },
-};
+#define WIDTH				( ORIGINAL_WIDTH * GLOBAL_IMAGE_SCALER )
+#define HEIGHT				( ORIGINAL_HEIGHT * GLOBAL_IMAGE_SCALER )
 
-static int				mpArgc[4];
-static char				mpArgV[4][10][32];
-static char*			mpArgVPtr[4][10];
+#define SCREENWIDTH			WIDTH
+#define SCREENHEIGHT		HEIGHT
 
-static bool drawFullScreen = false;
+extern Globals *globaldata[4];
 
 DoomInterface::DoomInterface() {
-	numplayers = 0;
-	bFinished[0] = bFinished[1] = bFinished[2] = bFinished[3] = false;
-	lastTicRun = 0;
+	// numplayers = 0;
+	// bFinished[0] = bFinished[1] = bFinished[2] = bFinished[3] = false;
+	// lastTicRun = 0;
 }
 
 DoomInterface::~DoomInterface() {
+	delete[] ::g->screens[0];
 }
 
 
-void DoomInterface::Startup( int playerscount, bool multiplayer )
+// Carl: needed for Doom 3 BFG Edition's Common.cpp
+void DoomInterface::Startup(int playerscount, bool multiplayer)
 {
 	int i;
+#if 0
 	int localdargc = 1; // for the commandline
 
 	numplayers			= playerscount;
@@ -89,15 +81,15 @@ void DoomInterface::Startup( int playerscount, bool multiplayer )
 		// TODO: We should support local splitscreen and online.
 		numplayers = 1;
 	}
-
+#endif
 	// Start up DooM Classic
-	for ( i = 0; i < numplayers; ++i)
+	for ( i = 0; i < 1; ++i)
 	{
 		DoomLib::SetPlayer(i);
 
-		bFinished[i] = false;
+		//bFinished[i] = false;
 		DoomLib::InitGlobals( NULL );
-
+#if 0
 		if ( globalNetworking ) {
 			printf( "Starting mulitplayer game, argv = " );
 			for ( int j = 0; j < mpArgc[0]; ++j ) {
@@ -121,13 +113,24 @@ void DoomInterface::Startup( int playerscount, bool multiplayer )
 			DoomLib::skipToNew = false;
 			::g->menuactive = 0;
 		}
-
+#endif
 		DoomLib::SetPlayer(-1);
+	}
+	byte*	base;
+
+	base = (byte*) new byte[SCREENWIDTH * SCREENHEIGHT * 4];
+	memset(base, 0, SCREENWIDTH * SCREENHEIGHT * 4);
+	::g = (Globals *)DoomLib::GetGlobalData( 0 );
+	for (i = 0; i < 4; i++)
+	{
+		::g->screens[i] = base + i * SCREENWIDTH * SCREENHEIGHT;
 	}
 }
 
-bool DoomInterface::Frame( int iTime, idUserCmdMgr * userCmdMgr )
+// Carl: needed for Doom 3 BFG Edition's Common.cpp
+bool DoomInterface::Frame(int iTime, idUserCmdMgr * userCmdMgr)
 {
+#if 0
 	int i;
 	bool bAllFinished = true;
 
@@ -186,11 +189,13 @@ bool DoomInterface::Frame( int iTime, idUserCmdMgr * userCmdMgr )
 	}
 
 	return bAllFinished;
+#endif
+	return true;
 }
 
-void I_ShutdownNetwork();
-
+// Carl: needed for Doom 3 BFG Edition's Common.cpp
 void DoomInterface::Shutdown() {
+#if 0	
 	int i;
 
 	for ( i=0; i < numplayers; i++ ) {
@@ -209,97 +214,6 @@ void DoomInterface::Shutdown() {
 	DoomLib::SetPlayer( -1 );
 	numplayers = 0;
 	lastTicRun = 0;
-}
-
-qboolean G_CheckDemoStatus();
-
-void DoomInterface::QuitCurrentGame() {
-	for ( int i = 0; i < numplayers; i++ ) {
-		DoomLib::SetPlayer( i );
-
-		if(::g->netgame) {
-			// Shut down networking
-			D_QuitNetGame();
-		}
-
-		G_CheckDemoStatus();
-
-		globalPauseTime = false;
-		::g->menuactive = false;
-		::g->usergame = false;
-		::g->netgame = false;
-
-		lastTicRun = 0;
-
-		//if ( !gameLocal->IsSplitscreen() ) {
-			// Start background demos
-			D_StartTitle();
-		//}
-	}
-
-	// Shutdown local network state
-	I_ShutdownNetwork();
-}
-
-void DoomInterface::EndDMGame() {
-
-	for ( int i = 0; i < numplayers; i++ ) {
-		DoomLib::SetPlayer( i );
-
-		if(::g->netgame) {
-			D_QuitNetGame();
-		}
-
-		G_CheckDemoStatus();
-
-		globalPauseTime = false;
-		::g->menuactive = false;
-		::g->usergame = false;
-		::g->netgame = false;
-
-		lastTicRun = 0;
-
-		D_StartTitle();
-	}
-}
-
-//static 
-int DoomInterface::CurrentPlayer() {
-	return DoomLib::GetPlayer();
-}
-
-int DoomInterface::GetNumPlayers() const {
-	return numplayers;
-}
-
-#ifdef ID_ENABLE_DOOM_CLASSIC_NETWORKING
-void DoomInterface::SetNetworking( DoomLib::RecvFunc recv, DoomLib::SendFunc send, DoomLib::SendRemoteFunc sendRemote ) {
-	DoomLib::SetNetworking( recv, send, sendRemote );
-}
 #endif
-
-void DoomInterface::SetMultiplayerPlayers(int localPlayerIndex, int playerCount, int localPlayer, std::vector<std::string> playerAddresses) {
-	
-	for(int i = 0; i < 10; i++) {
-		mpArgVPtr[localPlayerIndex][i] = mpArgV[localPlayerIndex][i];
-	}
-	
-	mpArgc[localPlayerIndex] = playerCount+5;
-
-	strcpy(mpArgV[localPlayerIndex][0], "doomlauncher");
-	strcpy(mpArgV[localPlayerIndex][1], "-dup");
-	strcpy(mpArgV[localPlayerIndex][2], "1");
-	strcpy(mpArgV[localPlayerIndex][3], "-net");
-	
-	sprintf(mpArgV[localPlayerIndex][4], "%d", localPlayer);
-	strcpy(mpArgV[localPlayerIndex][5], playerAddresses[localPlayer].c_str());
-
-	int currentArg = 6;
-	for(int i = 0; i < playerCount; i++) {
-		if(i != localPlayer) {
-			strcpy(mpArgV[localPlayerIndex][currentArg], playerAddresses[i].c_str());
-			currentArg++;
-		}
-	}
 }
 
