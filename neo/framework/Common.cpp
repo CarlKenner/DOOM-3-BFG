@@ -2059,17 +2059,17 @@ bool idCommonLocal::ProcessEvent( const sysEvent_t* event )
 	if( IsPlayingDoomClassic() )
 	{
 		// Translate the event to Doom classic format.
-		event_t classicEvent;
+		event_t classicEvent = {};
 		if( event->evType == SE_KEY )
 		{
 		
 			if( event->evValue2 == 1 )
 			{
-				classicEvent.type = ev_keydown;
+				classicEvent.type = EV_KeyDown;
 			}
 			else if( event->evValue2 == 0 )
 			{
-				classicEvent.type = ev_keyup;
+				classicEvent.type = EV_KeyUp;
 			}
 			
 			DoomLib::SetPlayer( 0 );

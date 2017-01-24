@@ -844,6 +844,66 @@ file(GLOB EDITOR_SOUND_SOURCES tools/sound/*.cpp)
 
 file(GLOB DOOMCLASSIC_INCLUDES ../doomclassic/src/*.h)
 file(GLOB DOOMCLASSIC_SOURCES ../doomclassic/src/*.cpp)
+include_directories(../doomclassic/src)
+
+file(GLOB DOOMCLASSIC_FRAGGLE_INCLUDES ../doomclassic/src/fraggle/*.h)
+file(GLOB DOOMCLASSIC_FRAGGLE_SOURCES ../doomclassic/src/fraggle/*.cpp)
+
+file(GLOB DOOMCLASSIC_G_DOOM_INCLUDES ../doomclassic/src/g_doom/*.h)
+file(GLOB DOOMCLASSIC_G_DOOM_SOURCES ../doomclassic/src/g_doom/*.cpp)
+include_directories(../doomclassic/src/g_doom)
+
+file(GLOB DOOMCLASSIC_G_HERETIC_INCLUDES ../doomclassic/src/g_heretic/*.h)
+file(GLOB DOOMCLASSIC_G_HERETIC_SOURCES ../doomclassic/src/g_heretic/*.cpp)
+include_directories(../doomclassic/src/g_heretic)
+
+file(GLOB DOOMCLASSIC_G_HEXEN_INCLUDES ../doomclassic/src/g_hexen/*.h)
+file(GLOB DOOMCLASSIC_G_HEXEN_SOURCES ../doomclassic/src/g_hexen/*.cpp)
+include_directories(../doomclassic/src/g_hexen)
+
+file(GLOB DOOMCLASSIC_G_RAVEN_INCLUDES ../doomclassic/src/g_raven/*.h)
+file(GLOB DOOMCLASSIC_G_RAVEN_SOURCES ../doomclassic/src/g_raven/*.cpp)
+include_directories(../doomclassic/src/g_raven)
+
+file(GLOB DOOMCLASSIC_G_STRIFE_INCLUDES ../doomclassic/src/g_strife/*.h)
+file(GLOB DOOMCLASSIC_G_STRIFE_SOURCES ../doomclassic/src/g_strife/*.cpp)
+include_directories(../doomclassic/src/g_strife)
+
+file(GLOB DOOMCLASSIC_G_SHARED_INCLUDES ../doomclassic/src/g_shared/*.h)
+file(GLOB DOOMCLASSIC_G_SHARED_SOURCES ../doomclassic/src/g_shared/*.cpp)
+include_directories(../doomclassic/src/g_shared)
+
+file(GLOB_RECURSE DOOMCLASSIC_GL_INCLUDES ../doomclassic/src/gl/*.h)
+file(GLOB_RECURSE DOOMCLASSIC_GL_SOURCES ../doomclassic/src/gl/*.cpp)
+
+file(GLOB DOOMCLASSIC_INTERMISSION_INCLUDES ../doomclassic/src/intermission/*.h)
+file(GLOB DOOMCLASSIC_INTERMISSION_SOURCES ../doomclassic/src/intermission/*.cpp)
+
+file(GLOB DOOMCLASSIC_MENU_INCLUDES ../doomclassic/src/menu/*.h)
+file(GLOB DOOMCLASSIC_MENU_SOURCES ../doomclassic/src/menu/*.cpp)
+
+file(GLOB DOOMCLASSIC_SOUND_INCLUDES ../doomclassic/src/sound/*.h)
+file(GLOB DOOMCLASSIC_SOUND_SOURCES ../doomclassic/src/sound/*.cpp)
+include_directories(../doomclassic/src/sound)
+
+file(GLOB DOOMCLASSIC_TEXTURES_INCLUDES ../doomclassic/src/textures/*.h)
+file(GLOB DOOMCLASSIC_TEXTURES_SOURCES ../doomclassic/src/textures/*.cpp)
+
+file(GLOB DOOMCLASSIC_THINGDEF_INCLUDES ../doomclassic/src/thingdef/*.h)
+file(GLOB DOOMCLASSIC_THINGDEF_SOURCES ../doomclassic/src/thingdef/*.cpp)
+include_directories(../doomclassic/src/thingdef)
+
+file(GLOB DOOMCLASSIC_WIN32_INCLUDES ../doomclassic/src/win32/*.h)
+file(GLOB DOOMCLASSIC_WIN32_SOURCES ../doomclassic/src/win32/*.cpp)
+include_directories(../doomclassic/src/win32)
+
+file(GLOB DOOMCLASSIC_BZIP2_INCLUDES ../doomclassic/bzip2/*.h)
+file(GLOB DOOMCLASSIC_BZIP2_SOURCES ../doomclassic/bzip2/*.c)
+include_directories(../doomclassic/bzip2)
+
+file(GLOB DOOMCLASSIC_LZMA_INCLUDES ../doomclassic/lzma/c/*.h)
+file(GLOB DOOMCLASSIC_LZMA_SOURCES ../doomclassic/lzma/c/*.c)
+include_directories(../doomclassic/lzma/c)
 
 set(DOOMCLASSIC_STUBAUDIO_SOURCES ../doomclassic/src/i_sound_stub.cpp)
 set(DOOMCLASSIC_OPENAL_SOURCES ../doomclassic/src/i_sound_openal.cpp)
