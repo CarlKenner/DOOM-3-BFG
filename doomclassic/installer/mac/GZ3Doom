@@ -1,0 +1,6 @@
+#!/bin/sh
+
+BIN_DIR=`dirname $0`
+cd ${BIN_DIR}/../Resources
+./GZ3Doom $*
+

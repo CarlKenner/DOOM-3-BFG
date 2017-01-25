@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleDevelopmentRegion</key>
+    <string>en</string>
+  <key>CFBundleExecutable</key>
+    <string>@INSTALL_PROGRAM_NAME@</string>
+  <key>CFBundleIconFile</key>
+    <string>GZ3Doom.icns</string>
+  <key>CFBundleIdentifier</key>
+    <string>com.rotatingpenguin.gz3doom</string>
+  <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+  <key>CFBundleName</key>
+    <string>@INSTALL_PROGRAM_NAME@</string>
+  <key>CFBundlePackageType</key>
+    <string>APPL</string>
+  <key>CFBundleShortVersionString</key>
+    <string>@COMBINED_VERSION@</string>
+  <key>CFBundleSignature</key>
+    <string>CMB!</string>
+  <key>CFBundleVersion</key>
+    <string>@COMBINED_VERSION@</string>
+  <key>LSMinimumSystemVersion</key>
+    <string>@MACOSX_DEPLOYMENT_TARGET@</string>
+  <key>NSMainNibFile</key>
+    <string>MainMenu</string>
+  <key>NSPrincipalClass</key>
+    <string>NSApplication</string>
+  <key>CFBundleDocumentTypes</key>
+    <array>
+        <dict>
+          <key>CFBundleTypeExtensions</key>
+            <array>
+                <string>wad</string>
+                <string>pk3</string>
+                <string>WAD</string>
+                <string>PK3</string>
+            </array>
+          <key>CFBundleTypeIconFile</key>
+            <string>GZ3Doom.icns</string>
+          <key>CFBundleTypeName</key>
+            <string>Doom/Heretic/Hexen Level File</string>
+          <key>CFBundleTypeRole</key>
+            <string>Viewer</string>
+          <key>LSIsAppleDefaultForType</key>
+            <true/>
+          <key>LSHandlerRank</key>
+            <string>Alternate</string>
+        </dict>
+    </array>
+</dict>
+</plist>

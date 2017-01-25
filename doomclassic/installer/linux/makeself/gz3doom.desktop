@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=GZ3Doom
+GenericName=Doom Engine with stereoscopic features
+Exec=gz3doom
+Type=Application
+Categories=Game;
+StartupNotify=true
+Icon=gz3doom

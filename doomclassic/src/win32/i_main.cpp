@@ -1215,7 +1215,7 @@ static void infiniterecursion(int foo)
 // WinMain
 //
 //==========================================================================
-
+#ifndef __DOOM__
 int WINAPI WinMain (HINSTANCE hInstance, HINSTANCE nothing, LPSTR cmdline, int nCmdShow)
 {
 	g_hInst = hInstance;
@@ -1292,6 +1292,7 @@ int WINAPI WinMain (HINSTANCE hInstance, HINSTANCE nothing, LPSTR cmdline, int n
 	MainThread = INVALID_HANDLE_VALUE;
 	return 0;
 }
+#endif
 
 //==========================================================================
 //

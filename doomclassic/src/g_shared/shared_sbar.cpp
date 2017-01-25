@@ -398,7 +398,7 @@ void DBaseStatusBar::Tick ()
 //
 //---------------------------------------------------------------------------
 
-void DBaseStatusBar::AttachMessage (DHUDMessage *msg, DWORD id, int layer)
+void DBaseStatusBar::AttachMessage (DHUDMessage *msg, uint32 id, int layer)
 {
 	DHUDMessage *old = NULL;
 	DHUDMessage **prev;
@@ -466,7 +466,7 @@ DHUDMessage *DBaseStatusBar::DetachMessage (DHUDMessage *msg)
 	return NULL;
 }
 
-DHUDMessage *DBaseStatusBar::DetachMessage (DWORD id)
+DHUDMessage *DBaseStatusBar::DetachMessage (uint32 id)
 {
 	for (unsigned int i = 0; i < countof(Messages); ++i)
 	{
@@ -1113,10 +1113,10 @@ void DBaseStatusBar::RefreshBackground () const
 
 void DBaseStatusBar::DrawCrosshair ()
 {
-	static DWORD prevcolor = 0xffffffff;
+	static uint32 prevcolor = 0xffffffff;
 	static int palettecolor = 0;
 
-	DWORD color;
+	uint32 color;
 	fixed_t size;
 	int w, h;
 

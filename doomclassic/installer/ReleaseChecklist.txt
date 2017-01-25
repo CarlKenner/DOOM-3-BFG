@@ -1,0 +1,27 @@
+
+To create an installer for Distibution on Windows:
+
+ * Install NSIS on your computer.
+ * Select FORCE_INTERNAL_ZLIB in CMake for gzdoom project (to eliminate dependency on zlib.dll)
+ 
+ * Change version number in top level CMakeLists.txt
+ * Build in Release mode (so vcredist_x86.exe libs will work)
+ * Test:
+     Does crosshair work in Rift mode?
+     Do menus work in Rift mode?
+     Does intermission screen work (well enough) in Rift mode?
+     Does Rift mode work?
+     Does green/cyan mode work?
+ * Write release notes.
+ * Update web page
+ * Git commit locally
+ * Rerun CMake
+ * Create installer by building PACKAGE target.
+ [* Copy installer to installer folder NO]
+ * Create a release tag, like "GZ3Doom1.8.6_i"
+ * Commit changes to github
+ * Post download to site.
+ * Post announcement on the web site and the usual forums.
+ * Post a new demo video.
+ 
+ 

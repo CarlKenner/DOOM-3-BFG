@@ -139,6 +139,11 @@ inline unsigned int BigLong (unsigned int x)
 {
 	return (unsigned int)_byteswap_ulong((unsigned long)x);
 }
+
+inline unsigned long BigLong(unsigned long x)
+{
+	return (unsigned long)_byteswap_ulong((unsigned long)x);
+}
 #pragma warning (default: 4035)
 
 #else
@@ -162,7 +167,12 @@ inline unsigned int BigLong (unsigned int x)
 		| (x<<24));
 }
 
-inline int BigLong (int x)
+inline unsigned long BigLong (unsigned long x)
+{
+	return (unsigned long)BigLong((unsigned int)x);
+}
+
+inline int BigLong(int x)
 {
 	return (int)(
 		(((unsigned int)x)>>24)

@@ -1,0 +1,23 @@
+gz3doom (1.8.6i-3) trusty; urgency=low
+
+  * Fix broken link to gzdoom.pk3
+
+ -- Marshall Banana <djcj@gmx.de>  Mon, 30 Jun 2014 08:13:08 +0200
+
+gz3doom (1.8.6i-2) trusty; urgency=low
+
+  * Rebuild against LibOVR
+
+ -- Marshall Banana <djcj@gmx.de>  Sun, 29 Jun 2014 13:28:28 +0200
+
+gz3doom (1.8.6i-1) trusty; urgency=low
+
+  * New version
+
+ -- Marshall Banana <djcj@gmx.de>  Sat, 28 Jun 2014 18:26:26 +0200
+
+gz3doom (1.8.6h-1) trusty; urgency=low
+
+  * Initial release
+
+ -- Marshall Banana <djcj@gmx.de>  Sat, 28 Jun 2014 17:28:08 +0200

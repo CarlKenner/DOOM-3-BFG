@@ -1,0 +1,104 @@
+
+Version history:
+
+Version 1.8.6_l April 12, 2015
+* Position tracking works in DK2
+* Split hud and menus for side-by-side vr_modes 3 and 4
+* Correct position tracking for yaw in DK1 and DK2
+* Use Oculus SDK frame timing
+* Advance to Oculus SDK 0.4.4 from 0.3.2 (no more pausing the service...)
+* Enhancements to vr_mode wiki at https://github.com/cmbruns/gz3doom/wiki/Stereoscopic-3D-Modes-%28vr_mode%29
+* Correct spelling of "oculardium_optimosa" in installed Rift shortcut scripts
+
+Version 1.8.6_k April 5, 2015
+* Add neck-model based position tracking for both DK1 and DK2
+* Correct error in stereo 3D separation at high roll angles
+* Place weapon at bottom of screen, where it belongs, in side-by-side vr_modes 3 and 4 (HUD is not yet separated)
+* Add controller menu options "snap45left" and "snap45right" for VR "comfort mode" turning controls.
+* Installer creates separate aliases for launching GZ3Doom directly into Rift mode, on a particular monitor.
+
+Version 1.8.6_j March 29, 2015
+* Console is now readable in Rift mode, if CON_SCALETEXT is set to "1".
+* Map is now readable in Rift mode
+* Image scaling and fov are improved on DK2
+* Adjusted fov on both DK1 and DK2
+* Fixed subtle isotropic warping error on DK1 and DK2
+* Set Rift prediction interval to 30 milliseconds
+* Create new CVAR vr_lowpersist, to set/unset low-persistence mode on the Oculus Rift DK2
+* Create meta-command "oculardium_optimosa" to set a bunch of preferred parameters for the Oculus Rift
+  * Creates movement aliases "turn45left" and "turn45right", which can be bound to keys for "comfort mode"
+* Create new CVARS vr_hud_scale, and vr_sprite_scale, to change the size of the HUD and weapon, respectively, in Rift mode
+
+Version 1.8.6_i March 14, 2015
+* Add minimal head-tracking functionality for DK2 device
+* Positional tracking does NOT work, but rotational tracking, like on the DK1, does.
+* Uses the now-obsolete 0.3.2 Oculus SDK, instead of the even-more-obsolete 0.2 SDK.
+* Start using github features for release management
+
+Version 1.8.6_h June 19, 2014
+* First Mac version of GZ3Doom released
+* Aspect ratio now correct in both non-Rift and Rift modes (at the same time!)
+
+Version 1.8.6_g June 1, 2014
+* Avoid camera problem when viewing Rift mode without a Rift attached.
+* Merge latest changes from gzdoom upstream
+
+Version 1.8.6_e May 31, 2014
+* Apply late-scheduled head tracking, to reduce latency, to make menu viewing more comfortable, and to reduce annoyance of doom mods that force head position.
+* Elevate per-eye camera shift from OpenGL-only, up to renderer camera, to avoid missed textures in culling.
+* Reset pitch and roll when leaving rift mode.
+
+Version 1.8.6_d May 13, 2014
+* Correct pixel aspect ratio to 1.2
+* Add vr_weapon_height console variable, to adjust weapon sprite position
+
+Version 1.8.6_c May 11, 2014
+* Avoid calling drawUnhandledMissingTextures() until final pass.
+* Corrects hall-of-mirrors defect in Doom2 M2
+* Corrects missing doors in right-eye view in Doom E1M4
+
+Version 1.8.6_b May 10, 2014
+* Include glew32.dll in Windows installer
+
+Version 1.8.6_a May 10, 2014
+* Correct hall-of-mirrors defect in collaboration with Benjamin Johnson
+* Merge changes from gzdoom 1.8.6-ish
+
+Version 1.8.5_a May 6, 2014
+* Merge changes from recently released gzdoom version 1.8.5
+
+Version 1.8.2_f November 9, 2013
+* Implement Nvidia 3D Vision mode (vr_mode 7, Thanks Torr Samaho!)
+* Avoid crash with Alien Colonial Marines wad
+* Fix compile problem when Oculus SDK not available
+
+Version 1.8.2_e November 4, 2013
+* Fix aspect ratio for Oculus Rift dev model.
+* Capturing images/movies with FRAPS works again.
+* Right eye no longer gets double effect from radiation suit, pickups, and other "blend" operations
+
+Version 1.8.2_d October 30, 2013
+* Fix terrible units bug in frustum shift for all non-Rift 3D modes.
+* Add Rift view angle prediction with hard-coded latency of 20 ms.
+
+Version 1.8.2_c October 26, 2013
+* Correct crosshair placement at high pitch angles.
+* Correct placement of site-down-weapon weapon in Brutal Doom in Rift mode.
+* Screenshots in Rift mode work again.
+* Weapon is a bit larger than in version 1.8.2_b.
+* Weapon position is where it should be (for its size)
+* Setting vr_player_height cvar to your personal actual height in meters should make your feet just reach the ground.
+* Setting vr_view_yoffset to a value like 5 (map units) makes you taller so you're not so much shorter than the monsters.
+
+Version 1.8.2_b October 19, 2013
+* Rename CVARS from st3d_<whatever> to vr_<whatever>
+* Rift mode weapon is smaller and lower
+* Rift mode crosshair might be in the right place
+* Menus and intermission screens are now inside the Rift in Rift mode (this is the HARD part)
+* Elevate head position somewhat (though I did it the wrong way...)
+* vr_ipd (interpupillary distance) is read from Rift SDK, if available.
+
+Version 1.8.2 October 14, 2013
+* First release of GZ3Doom
+* Features Oculus Rift mode
+* Features other stereoscopic 3D modes

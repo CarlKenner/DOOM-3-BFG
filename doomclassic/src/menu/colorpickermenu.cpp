@@ -71,9 +71,9 @@ public:
 	DColorPickerMenu(DMenu *parent, const char *name, FOptionMenuDescriptor *desc, FColorCVar *cvar)
 	{
 		mStartItem = desc->mItems.Size();
-		mRed = (float)RPART(DWORD(*cvar));
-		mGreen = (float)GPART(DWORD(*cvar));
-		mBlue = (float)BPART(DWORD(*cvar));
+		mRed = (float)RPART(uint32(*cvar));
+		mGreen = (float)GPART(uint32(*cvar));
+		mBlue = (float)BPART(uint32(*cvar));
 		mGridPosX = 0;
 		mGridPosY = 0;
 		mCVar = cvar;
@@ -113,9 +113,9 @@ public:
 
 	void Reset()
 	{
-		mRed = (float)RPART(DWORD(*mCVar));
-		mGreen = (float)GPART(DWORD(*mCVar));
-		mBlue = (float)BPART(DWORD(*mCVar));
+		mRed = (float)RPART(uint32(*mCVar));
+		mGreen = (float)GPART(uint32(*mCVar));
+		mBlue = (float)BPART(uint32(*mCVar));
 	}
 
 	//=============================================================================
@@ -316,7 +316,7 @@ public:
 		}
 		y = yy;
 		DWORD newColor = MAKEARGB(255, int(mRed), int(mGreen), int(mBlue));
-		DWORD oldColor = DWORD(*mCVar) | 0xFF000000;
+		DWORD oldColor = uint32(*mCVar) | 0xFF000000;
 
 		int x = screen->GetWidth()*2/3;
 
