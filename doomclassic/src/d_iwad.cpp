@@ -430,6 +430,10 @@ int FIWadManager::IdentifyVersion (TArray<FString> &wadfiles, const char *iwad, 
 				}
 			}
 		}
+
+		// Carl: Doom 3 BFG Edition
+		CheckIWAD("./base/wads", &wads[0]);
+
 		TArray<FString> steam_path = I_GetSteamPath();
 		for (i = 0; i < steam_path.Size(); ++i)
 		{

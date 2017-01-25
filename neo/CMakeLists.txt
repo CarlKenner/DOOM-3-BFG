@@ -963,6 +963,11 @@ set(DOOMCLASSIC_STUBAUDIO_SOURCES ../doomclassic/src/i_sound_stub.cpp)
 set(DOOMCLASSIC_OPENAL_SOURCES ../doomclassic/src/i_sound_openal.cpp)
 set(DOOMCLASSIC_XAUDIO2_SOURCES ../doomclassic/src/i_sound_win32.cpp)
 
+file(GLOB DOOMCLASSIC_BFG_INCLUDES ../doomclassic/src/doomlib.h;../doomclassic/src/doominterface.h; ../doomclassic/src/doomdef.h;../doomclassic/src/d_event.h;../doomclassic/src/d_main.h; ../doomclassic/src/globaldata.h;../doomclassic/src/vars.h;../doomclassic/src/constructs.h; ../doomclassic/src/i_sound.h)
+file(GLOB DOOMCLASSIC_BFG_SOURCES ../doomclassic/src/doomlib.cpp;../doomclassic/src/doominterface.cpp; ../doomclassic/src/d_main.cpp; ../doomclassic/src/globaldata.cpp; ../doomclassic/src/i_sound_win32.cpp)
+list(REMOVE_ITEM DOOMCLASSIC_INCLUDES ${DOOMCLASSIC_BFG_INCLUDES})
+list(REMOVE_ITEM DOOMCLASSIC_SOURCES ${DOOMCLASSIC_BFG_SOURCES})
+
 list(REMOVE_ITEM DOOMCLASSIC_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/../doomclassic/src/i_sound_stub.cpp)
 list(REMOVE_ITEM DOOMCLASSIC_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/../doomclassic/src/i_sound_openal.cpp)
 list(REMOVE_ITEM DOOMCLASSIC_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/../doomclassic/src/i_sound_win32.cpp)
@@ -1155,6 +1160,8 @@ source_group("sys" FILES ${SYS_SOURCES})
 source_group("doomclassic" FILES ${DOOMCLASSIC_INCLUDES})
 source_group("doomclassic" FILES ${DOOMCLASSIC_SOURCES})
 
+source_group("doomclassic\\BFG interface" FILES ${DOOMCLASSIC_BFG_INCLUDES} ${DOOMCLASSIC_BFG_SOURCES})
+
 source_group("doomclassic" FILES ${DOOMCLASSIC_STUBAUDIO_SOURCES})
 source_group("doomclassic" FILES ${DOOMCLASSIC_OPENAL_SOURCES})
 source_group("doomclassic" FILES ${DOOMCLASSIC_XAUDIO2_SOURCES})
@@ -1320,6 +1327,7 @@ set(DOOM3_INCLUDES
 			${COMMON_INCLUDES}
 
 			${DOOMCLASSIC_INCLUDES}
+			${DOOMCLASSIC_BFG_INCLUDES}
 			${DOOMCLASSIC_FRAGGLE_INCLUDES}
 			${DOOMCLASSIC_G_DOOM_INCLUDES}
 			${DOOMCLASSIC_G_HERETIC_INCLUDES}
@@ -1383,6 +1391,7 @@ set(DOOM3_SOURCES
 			${COMMON_SOURCES}
 
 			${DOOMCLASSIC_SOURCES}
+			${DOOMCLASSIC_BFG_SOURCES}
 			${DOOMCLASSIC_FRAGGLE_SOURCES}
 			${DOOMCLASSIC_G_DOOM_SOURCES}
 			${DOOMCLASSIC_G_HERETIC_SOURCES}
@@ -1589,6 +1598,7 @@ if(MSVC)
 	list(REMOVE_ITEM DOOM3_PRECOMPILED_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/renderer/RenderLog.cpp)
         list(REMOVE_ITEM DOOM3_PRECOMPILED_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/framework/precompiled.cpp)
 	list(REMOVE_ITEM DOOM3_PRECOMPILED_SOURCES ${DOOMCLASSIC_SOURCES})
+	list(REMOVE_ITEM DOOM3_PRECOMPILED_SOURCES ${DOOMCLASSIC_BFG_SOURCES})
 	list(REMOVE_ITEM DOOM3_PRECOMPILED_SOURCES ${DOOMCLASSIC_FRAGGLE_SOURCES})
 	list(REMOVE_ITEM DOOM3_PRECOMPILED_SOURCES ${DOOMCLASSIC_G_DOOM_SOURCES})
 	list(REMOVE_ITEM DOOM3_PRECOMPILED_SOURCES ${DOOMCLASSIC_G_HERETIC_SOURCES})
@@ -1670,6 +1680,7 @@ if(MSVC)
 		dbghelp
 		#eaxguid
 		iphlpapi
+		comctl32
 		winmm
 		wsock32.lib
 		${OpenAL_LIBRARIES}

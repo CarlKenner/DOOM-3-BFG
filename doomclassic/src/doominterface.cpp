@@ -51,7 +51,8 @@ DoomInterface::DoomInterface() {
 }
 
 DoomInterface::~DoomInterface() {
-	delete[] ::g->screens[0];
+	if (g)
+		delete[] ::g->screens[0];
 }
 
 

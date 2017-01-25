@@ -2133,7 +2133,18 @@ idCommonLocal::SwitchToGame
 */
 void idCommonLocal::SwitchToGame( currentGame_t newGame )
 {
-	idealCurrentGame = newGame;
+	// Carl: restart in gz3doom mode if they choose a classic game
+	switch (newGame)
+	{
+		case DOOM_CLASSIC:
+			Sys_ReLaunch(" -iwad doom");
+			break;
+		case DOOM2_CLASSIC:
+			Sys_ReLaunch(" -iwad doom2");
+			break;
+		default:
+			idealCurrentGame = newGame;
+	}
 }
 
 /*
