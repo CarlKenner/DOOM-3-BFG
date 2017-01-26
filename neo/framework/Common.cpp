@@ -38,9 +38,9 @@ If you have questions concerning this license or the applicable additional terms
 
 // RB begin
 #if defined(USE_DOOMCLASSIC)
-#include "../../doomclassic/doom/doomlib.h"
-#include "../../doomclassic/doom/d_event.h"
-#include "../../doomclassic/doom/d_main.h"
+#include "../../doomclassic/src/doomlib.h"
+#include "../../doomclassic/src/d_event.h"
+#include "../../doomclassic/src/d_main.h"
 #endif
 // RB end
 
