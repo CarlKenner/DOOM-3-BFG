@@ -232,7 +232,7 @@ if (JPEG_FOUND)
     set(JPEG_LIBRARY ${JPEG_LIBRARIES})
     add_definitions(-DUSE_NEWER_JPEG)
 else (JPEG_FOUND)
-    include_directories("libs/jpeg-6")
+    include_directories("libs/jpeg-9b")
     set(JPEG_LIBRARY "" )
 endif (JPEG_FOUND)
 
@@ -408,67 +408,67 @@ file(GLOB IRRXML_SOURCES libs/irrxml/src/*.cpp)
 
 if (NOT JPEG_FOUND)
     set(JPEG_INCLUDES
-        libs/jpeg-6/jchuff.h
-        libs/jpeg-6/jconfig.h
-        libs/jpeg-6/jdct.h
-        libs/jpeg-6/jdhuff.h
-        libs/jpeg-6/jerror.h
-        libs/jpeg-6/jinclude.h
-        libs/jpeg-6/jmemsys.h
-        libs/jpeg-6/jmorecfg.h
-        libs/jpeg-6/jpegint.h
-        libs/jpeg-6/jpeglib.h
-        libs/jpeg-6/jversion.h)
+        libs/jpeg-9b/jchuff.h
+        libs/jpeg-9b/jconfig.h
+        libs/jpeg-9b/jdct.h
+        libs/jpeg-9b/jdhuff.h
+        libs/jpeg-9b/jerror.h
+        libs/jpeg-9b/jinclude.h
+        libs/jpeg-9b/jmemsys.h
+        libs/jpeg-9b/jmorecfg.h
+        libs/jpeg-9b/jpegint.h
+        libs/jpeg-9b/jpeglib.h
+        libs/jpeg-9b/jversion.h)
 
     set(JPEG_SOURCES
-        libs/jpeg-6/jcapimin.cpp
-        libs/jpeg-6/jcapistd.cpp
-        libs/jpeg-6/jccoefct.cpp
-        libs/jpeg-6/jccolor.cpp
-        libs/jpeg-6/jcdctmgr.cpp
-        libs/jpeg-6/jchuff.cpp
-        libs/jpeg-6/jcinit.cpp
-        libs/jpeg-6/jcmainct.cpp
-        libs/jpeg-6/jcmarker.cpp
-        libs/jpeg-6/jcmaster.cpp
-        libs/jpeg-6/jcomapi.cpp
-        libs/jpeg-6/jcparam.cpp
-        libs/jpeg-6/jcphuff.cpp
-        libs/jpeg-6/jcprepct.cpp
-        libs/jpeg-6/jcsample.cpp
-        libs/jpeg-6/jctrans.cpp
-        libs/jpeg-6/jdapimin.cpp
-        libs/jpeg-6/jdapistd.cpp
-        libs/jpeg-6/jdatadst.cpp
-        libs/jpeg-6/jdatasrc.cpp
-        libs/jpeg-6/jdcoefct.cpp
-        libs/jpeg-6/jdcolor.cpp
-        libs/jpeg-6/jddctmgr.cpp
-        libs/jpeg-6/jdhuff.cpp
-        libs/jpeg-6/jdinput.cpp
-        libs/jpeg-6/jdmainct.cpp
-        libs/jpeg-6/jdmarker.cpp
-        libs/jpeg-6/jdmaster.cpp
-        libs/jpeg-6/jdmerge.cpp
-        libs/jpeg-6/jdphuff.cpp
-        libs/jpeg-6/jdpostct.cpp
-        libs/jpeg-6/jdsample.cpp
-        libs/jpeg-6/jdtrans.cpp
-        libs/jpeg-6/jerror.cpp
-        libs/jpeg-6/jfdctflt.cpp
-        libs/jpeg-6/jfdctfst.cpp
-        libs/jpeg-6/jfdctint.cpp
-        libs/jpeg-6/jidctflt.cpp
-        libs/jpeg-6/jidctfst.cpp
-        libs/jpeg-6/jidctint.cpp
-        libs/jpeg-6/jidctred.cpp
-        #libs/jpeg-6/jload.cpp
-        libs/jpeg-6/jmemmgr.cpp
-        libs/jpeg-6/jmemnobs.cpp
-        #libs/jpeg-6/jpegtran.cpp
-        libs/jpeg-6/jquant1.cpp
-        libs/jpeg-6/jquant2.cpp
-        libs/jpeg-6/jutils.cpp)
+        libs/jpeg-9b/jcapimin.cpp
+        libs/jpeg-9b/jcapistd.cpp
+        libs/jpeg-9b/jccoefct.cpp
+        libs/jpeg-9b/jccolor.cpp
+        libs/jpeg-9b/jcdctmgr.cpp
+        libs/jpeg-9b/jchuff.cpp
+        libs/jpeg-9b/jcinit.cpp
+        libs/jpeg-9b/jcmainct.cpp
+        libs/jpeg-9b/jcmarker.cpp
+        libs/jpeg-9b/jcmaster.cpp
+        libs/jpeg-9b/jcomapi.cpp
+        libs/jpeg-9b/jcparam.cpp
+        libs/jpeg-9b/jcphuff.cpp
+        libs/jpeg-9b/jcprepct.cpp
+        libs/jpeg-9b/jcsample.cpp
+        libs/jpeg-9b/jctrans.cpp
+        libs/jpeg-9b/jdapimin.cpp
+        libs/jpeg-9b/jdapistd.cpp
+        libs/jpeg-9b/jdatadst.cpp
+        libs/jpeg-9b/jdatasrc.cpp
+        libs/jpeg-9b/jdcoefct.cpp
+        libs/jpeg-9b/jdcolor.cpp
+        libs/jpeg-9b/jddctmgr.cpp
+        libs/jpeg-9b/jdhuff.cpp
+        libs/jpeg-9b/jdinput.cpp
+        libs/jpeg-9b/jdmainct.cpp
+        libs/jpeg-9b/jdmarker.cpp
+        libs/jpeg-9b/jdmaster.cpp
+        libs/jpeg-9b/jdmerge.cpp
+        libs/jpeg-9b/jdphuff.cpp
+        libs/jpeg-9b/jdpostct.cpp
+        libs/jpeg-9b/jdsample.cpp
+        libs/jpeg-9b/jdtrans.cpp
+        libs/jpeg-9b/jerror.cpp
+        libs/jpeg-9b/jfdctflt.cpp
+        libs/jpeg-9b/jfdctfst.cpp
+        libs/jpeg-9b/jfdctint.cpp
+        libs/jpeg-9b/jidctflt.cpp
+        libs/jpeg-9b/jidctfst.cpp
+        libs/jpeg-9b/jidctint.cpp
+        libs/jpeg-9b/jidctred.cpp
+        #libs/jpeg-9b/jload.cpp
+        libs/jpeg-9b/jmemmgr.cpp
+        libs/jpeg-9b/jmemnobs.cpp
+        #libs/jpeg-9b/jpegtran.cpp
+        libs/jpeg-9b/jquant1.cpp
+        libs/jpeg-9b/jquant2.cpp
+        libs/jpeg-9b/jutils.cpp)
 else (NOT JPEG_FOUND)
    set(JPEG_INCLUDES "")
    set(JPEG_SOURCES "")
@@ -994,8 +994,8 @@ source_group("renderer\\OpenGL" FILES ${RENDERER_OPENGL_SOURCES})
 source_group("libs\\irrxml" FILES ${IRRXML_INCLUDES})
 source_group("libs\\irrxml" FILES ${IRRXML_SOURCES})
 
-source_group("libs\\jpeg-6" FILES ${JPEG_INCLUDES})
-source_group("libs\\jpeg-6" FILES ${JPEG_SOURCES})
+source_group("libs\\jpeg-9b" FILES ${JPEG_INCLUDES})
+source_group("libs\\jpeg-9b" FILES ${JPEG_SOURCES})
 
 source_group("libs\\png" FILES ${PNG_INCLUDES})
 source_group("libs\\png" FILES ${PNG_SOURCES})

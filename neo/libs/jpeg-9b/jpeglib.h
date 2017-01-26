@@ -22,9 +22,9 @@ typedef unsigned char boolean;
  */
 
 #ifndef JCONFIG_INCLUDED	/* in case jinclude.h already did */
-#include "../jpeg-6/jconfig.h"		/* widely used configuration options */
+#include "../jpeg-9b/jconfig.h"		/* widely used configuration options */
 #endif
-#include "../jpeg-6/jmorecfg.h"		/* seldom changed options */
+#include "../jpeg-9b/jmorecfg.h"		/* seldom changed options */
 
 
 /* Version ID for the JPEG library.
@@ -1044,8 +1044,8 @@ struct jpeg_color_quantizer { long dummy; };
  */
 
 #ifdef JPEG_INTERNALS
-#include "../jpeg-6/jpegint.h"		/* fetch private declarations */
-#include "../jpeg-6/jerror.h"		/* fetch error codes too */
+#include "../jpeg-9b/jpegint.h"		/* fetch private declarations */
+#include "../jpeg-9b/jerror.h"		/* fetch error codes too */
 #endif
 
 #endif /* JPEGLIB_H */
