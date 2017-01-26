@@ -234,6 +234,7 @@ if (JPEG_FOUND)
 else (JPEG_FOUND)
     include_directories("libs/jpeg-9b")
     set(JPEG_LIBRARY "" )
+    add_definitions(-DUSE_NEWER_JPEG)
 endif (JPEG_FOUND)
 
 if (USE_SYSTEM_LIBGLEW)
@@ -408,10 +409,10 @@ file(GLOB IRRXML_SOURCES libs/irrxml/src/*.cpp)
 
 if (NOT JPEG_FOUND)
     set(JPEG_INCLUDES
-        libs/jpeg-9b/jchuff.h
+#        libs/jpeg-9b/jchuff.h
         libs/jpeg-9b/jconfig.h
         libs/jpeg-9b/jdct.h
-        libs/jpeg-9b/jdhuff.h
+#        libs/jpeg-9b/jdhuff.h
         libs/jpeg-9b/jerror.h
         libs/jpeg-9b/jinclude.h
         libs/jpeg-9b/jmemsys.h
@@ -421,8 +422,10 @@ if (NOT JPEG_FOUND)
         libs/jpeg-9b/jversion.h)
 
     set(JPEG_SOURCES
+        libs/jpeg-9b/jaricom.cpp
         libs/jpeg-9b/jcapimin.cpp
         libs/jpeg-9b/jcapistd.cpp
+        libs/jpeg-9b/jcarith.cpp
         libs/jpeg-9b/jccoefct.cpp
         libs/jpeg-9b/jccolor.cpp
         libs/jpeg-9b/jcdctmgr.cpp
@@ -433,12 +436,13 @@ if (NOT JPEG_FOUND)
         libs/jpeg-9b/jcmaster.cpp
         libs/jpeg-9b/jcomapi.cpp
         libs/jpeg-9b/jcparam.cpp
-        libs/jpeg-9b/jcphuff.cpp
+#        libs/jpeg-9b/jcphuff.cpp
         libs/jpeg-9b/jcprepct.cpp
         libs/jpeg-9b/jcsample.cpp
         libs/jpeg-9b/jctrans.cpp
         libs/jpeg-9b/jdapimin.cpp
         libs/jpeg-9b/jdapistd.cpp
+        libs/jpeg-9b/jdarith.cpp
         libs/jpeg-9b/jdatadst.cpp
         libs/jpeg-9b/jdatasrc.cpp
         libs/jpeg-9b/jdcoefct.cpp
@@ -450,7 +454,7 @@ if (NOT JPEG_FOUND)
         libs/jpeg-9b/jdmarker.cpp
         libs/jpeg-9b/jdmaster.cpp
         libs/jpeg-9b/jdmerge.cpp
-        libs/jpeg-9b/jdphuff.cpp
+#        libs/jpeg-9b/jdphuff.cpp
         libs/jpeg-9b/jdpostct.cpp
         libs/jpeg-9b/jdsample.cpp
         libs/jpeg-9b/jdtrans.cpp
@@ -461,7 +465,7 @@ if (NOT JPEG_FOUND)
         libs/jpeg-9b/jidctflt.cpp
         libs/jpeg-9b/jidctfst.cpp
         libs/jpeg-9b/jidctint.cpp
-        libs/jpeg-9b/jidctred.cpp
+#        libs/jpeg-9b/jidctred.cpp
         #libs/jpeg-9b/jload.cpp
         libs/jpeg-9b/jmemmgr.cpp
         libs/jpeg-9b/jmemnobs.cpp

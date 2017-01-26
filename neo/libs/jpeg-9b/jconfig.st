@@ -1,5 +1,4 @@
-/* jconfig.vc --- jconfig.h for Microsoft Visual C++ on Windows 9x or NT. */
-/* This file also works for Borland C++ 32-bit (bcc32) on Windows 9x or NT. */
+/* jconfig.st --- jconfig.h for Atari ST/STE/TT using Pure C or Turbo C. */
 /* see jconfig.txt for explanations */
 
 #define HAVE_PROTOTYPES
@@ -12,26 +11,15 @@
 #define HAVE_STDLIB_H
 #undef NEED_BSD_STRINGS
 #undef NEED_SYS_TYPES_H
-#undef NEED_FAR_POINTERS	/* we presume a 32-bit flat memory model */
+#undef NEED_FAR_POINTERS
 #undef NEED_SHORT_EXTERNAL_NAMES
-#undef INCOMPLETE_TYPES_BROKEN
-
-/* Define "boolean" as unsigned char, not enum, per Windows custom */
-#ifndef __RPCNDR_H__		/* don't conflict if rpcndr.h already read */
-typedef unsigned char boolean;
-#endif
-#ifndef FALSE			/* in case these macros already exist */
-#define FALSE	0		/* values of boolean */
-#endif
-#ifndef TRUE
-#define TRUE	1
-#endif
-#define HAVE_BOOLEAN		/* prevent jmorecfg.h from redefining it */
-
+#define INCOMPLETE_TYPES_BROKEN	/* suppress undefined-structure warnings */
 
 #ifdef JPEG_INTERNALS
 
 #undef RIGHT_SHIFT_IS_UNSIGNED
+
+#define ALIGN_TYPE  long	/* apparently double is a weird size? */
 
 #endif /* JPEG_INTERNALS */
 
@@ -43,9 +31,11 @@ typedef unsigned char boolean;
 #undef RLE_SUPPORTED		/* Utah RLE image file format */
 #define TARGA_SUPPORTED		/* Targa image file format */
 
-#define TWO_FILE_COMMANDLINE	/* optional */
-#define USE_SETMODE		/* Microsoft has setmode() */
-#undef NEED_SIGNAL_CATCHER
+#define TWO_FILE_COMMANDLINE	/* optional -- undef if you like Unix style */
+/* Note: if you undef TWO_FILE_COMMANDLINE, you may need to define
+ * USE_SETMODE.  Some Atari compilers require it, some do not.
+ */
+#define NEED_SIGNAL_CATCHER	/* needed if you use jmemname.c */
 #undef DONT_USE_B_MODE
 #undef PROGRESS_REPORT		/* optional */
 
