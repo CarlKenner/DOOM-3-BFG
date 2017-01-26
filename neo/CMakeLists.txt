@@ -853,7 +853,7 @@ set(DOOMCLASSIC_STUBAUDIO_SOURCES ../doomclassic/src/i_sound_stub.cpp)
 set(DOOMCLASSIC_OPENAL_SOURCES ../doomclassic/src/i_sound_openal.cpp)
 set(DOOMCLASSIC_XAUDIO2_SOURCES ../doomclassic/src/i_sound_win32.cpp)
 
-file(GLOB DOOMCLASSIC_BFG_INCLUDES ../doomclassic/src/doomlib.h;../doomclassic/src/doominterface.h; ../doomclassic/src/doomdef.h;../doomclassic/src/d_event.h;../doomclassic/src/d_main.h; ../doomclassic/src/globaldata.h;../doomclassic/src/vars.h;../doomclassic/src/constructs.h; ../doomclassic/src/i_sound.h)
+file(GLOB DOOMCLASSIC_BFG_INCLUDES ../doomclassic/src/doomlib.h;../doomclassic/src/doominterface.h; ../doomclassic/src/doomdef.h;../doomclassic/src/d_event.h;../doomclassic/src/d_main.h; ../doomclassic/src/globaldata.h;../doomclassic/src/vars.h;../doomclassic/src/constructs.h; ../doomclassic/src/sound/i_sound.h)
 file(GLOB DOOMCLASSIC_BFG_SOURCES ../doomclassic/src/doomlib.cpp;../doomclassic/src/doominterface.cpp; ../doomclassic/src/d_main.cpp; ../doomclassic/src/globaldata.cpp; ../doomclassic/src/i_sound_win32.cpp)
 list(REMOVE_ITEM DOOMCLASSIC_INCLUDES ${DOOMCLASSIC_BFG_INCLUDES})
 list(REMOVE_ITEM DOOMCLASSIC_SOURCES ${DOOMCLASSIC_BFG_SOURCES})

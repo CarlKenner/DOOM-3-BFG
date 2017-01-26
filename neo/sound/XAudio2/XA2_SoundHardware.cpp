@@ -30,7 +30,7 @@ If you have questions concerning this license or the applicable additional terms
 #include "precompiled.h"
 #include "../snd_local.h"
 #if defined(USE_DOOMCLASSIC)
-#include "../../../doomclassic/src/i_sound.h"
+#include "../../../doomclassic/src/sound/i_sound.h"
 #endif
 
 idCVar s_showLevelMeter( "s_showLevelMeter", "0", CVAR_BOOL | CVAR_ARCHIVE, "Show VU meter" );
