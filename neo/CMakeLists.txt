@@ -853,6 +853,11 @@ set(DOOMCLASSIC_STUBAUDIO_SOURCES ../doomclassic/doom/i_sound_stub.cpp)
 set(DOOMCLASSIC_OPENAL_SOURCES ../doomclassic/doom/i_sound_openal.cpp)
 set(DOOMCLASSIC_XAUDIO2_SOURCES ../doomclassic/doom/i_sound_win32.cpp)
 
+file(GLOB DOOMCLASSIC_BFG_INCLUDES ../doomclassic/doom/doomlib.h;../doomclassic/doom/doominterface.h; ../doomclassic/doom/doomdef.h;../doomclassic/doom/d_event.h;../doomclassic/doom/d_main.h; ../doomclassic/doom/globaldata.h;../doomclassic/doom/vars.h;../doomclassic/doom/constructs.h; ../doomclassic/doom/i_sound.h)
+file(GLOB DOOMCLASSIC_BFG_SOURCES ../doomclassic/doom/doomlib.cpp;../doomclassic/doom/doominterface.cpp; ../doomclassic/doom/d_main.cpp; ../doomclassic/doom/globaldata.cpp; ../doomclassic/doom/i_sound_win32.cpp)
+list(REMOVE_ITEM DOOMCLASSIC_INCLUDES ${DOOMCLASSIC_BFG_INCLUDES})
+list(REMOVE_ITEM DOOMCLASSIC_SOURCES ${DOOMCLASSIC_BFG_SOURCES})
+
 list(REMOVE_ITEM DOOMCLASSIC_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/../doomclassic/doom/i_sound_stub.cpp)
 list(REMOVE_ITEM DOOMCLASSIC_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/../doomclassic/doom/i_sound_openal.cpp)
 list(REMOVE_ITEM DOOMCLASSIC_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/../doomclassic/doom/i_sound_win32.cpp)
@@ -1045,9 +1050,11 @@ source_group("sys" FILES ${SYS_SOURCES})
 source_group("doomclassic" FILES ${DOOMCLASSIC_INCLUDES})
 source_group("doomclassic" FILES ${DOOMCLASSIC_SOURCES})
 
+source_group("doomclassic\\BFG interface" FILES ${DOOMCLASSIC_BFG_INCLUDES} ${DOOMCLASSIC_BFG_SOURCES})
+
 source_group("doomclassic" FILES ${DOOMCLASSIC_STUBAUDIO_SOURCES})
 source_group("doomclassic" FILES ${DOOMCLASSIC_OPENAL_SOURCES})
-source_group("doomclassic" FILES ${DOOMCLASSIC_XAUDIO2_SOURCES})
+#source_group("doomclassic" FILES ${DOOMCLASSIC_XAUDIO2_SOURCES})
 
 source_group("libs\\timidity" FILES ${TIMIDITY_INCLUDES})
 source_group("libs\\timidity" FILES ${TIMIDITY_SOURCES})
@@ -1173,7 +1180,9 @@ set(DOOM3_INCLUDES
 			${VR_INCLUDES}
 			${SWF_INCLUDES}
 			${COMMON_INCLUDES}
+			
 			${DOOMCLASSIC_INCLUDES}
+			${DOOMCLASSIC_BFG_INCLUDES}
 			${TIMIDITY_INCLUDES}
 			
 			${COMPILER_INCLUDES}
@@ -1209,7 +1218,9 @@ set(DOOM3_SOURCES
 			${VR_SOURCES}
 			${SWF_SOURCES}
 			${COMMON_SOURCES}
+			
 			${DOOMCLASSIC_SOURCES}
+			${DOOMCLASSIC_BFG_SOURCES}
 			${TIMIDITY_SOURCES}
 			
 			${COMPILER_AAS_SOURCES}
