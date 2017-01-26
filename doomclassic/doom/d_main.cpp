@@ -29,7 +29,7 @@ If you have questions concerning this license or the applicable additional terms
 #include "Precompiled.h"
 #include "globaldata.h"
 
-
+#if 0
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -70,8 +70,11 @@ If you have questions concerning this license or the applicable additional terms
 #include "p_setup.h"
 #include "r_local.h"
 
+#endif
 
 #include "d_main.h"
+
+#if 0
 
 //#include "precompiled.h"
 //#include "../Main/PlayerProfile.h"
@@ -109,6 +112,7 @@ const char*		extraWad = 0;
 // Events can be discarded if no responder claims them
 //
 
+#endif
 
 //
 // D_PostEvent
@@ -116,10 +120,13 @@ const char*		extraWad = 0;
 //
 void D_PostEvent (event_t* ev)
 {
+#if 0
 	::g->events[::g->eventhead] = *ev;
 	::g->eventhead = (++::g->eventhead)&(MAXEVENTS-1);
+#endif
 }
 
+#if 0
 
 //
 // D_ProcessEvents
@@ -863,4 +870,4 @@ bool D_DoomMainPoll(void)
 	return true;
 }
 
-
+#endif

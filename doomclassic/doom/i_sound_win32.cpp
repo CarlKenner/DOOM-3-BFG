@@ -29,6 +29,8 @@ If you have questions concerning this license or the applicable additional terms
 #include "Precompiled.h"
 #include "globaldata.h"
 
+#if 0
+
 //
 // DESCRIPTION:
 //	System interface for sound.
@@ -591,6 +593,8 @@ void I_ShutdownSound(void) {
 	return;
 }
 
+#endif
+
 /*
 ======================
 I_InitSoundHardware
@@ -600,8 +604,8 @@ sound channels.
 ======================
 */
 void I_InitSoundHardware( int numOutputChannels_, int channelMask ) {
+#if 0
 	::numOutputChannels = numOutputChannels_;
-
 	// Initialize the X3DAudio
 	//  Speaker geometry configuration on the final mix, specifies assignment of channels
 	//  to speaker positions, defined as per WAVEFORMATEXTENSIBLE.dwChannelMask
@@ -616,6 +620,7 @@ void I_InitSoundHardware( int numOutputChannels_, int channelMask ) {
 	I_InitMusic();
 
 	soundHardwareInitialized = true;
+#endif
 }
 
 
@@ -628,6 +633,7 @@ sound channels.
 ======================
 */
 void I_ShutdownSoundHardware() {
+#if 0
 	soundHardwareInitialized = false;
 
 	I_ShutdownMusic();
@@ -651,7 +657,10 @@ void I_ShutdownSoundHardware() {
 			sound->m_DSPSettings.pMatrixCoefficients = NULL;
 		}
 	}
+#endif
 }
+
+#if 0
 
 /*
 ======================
@@ -1104,3 +1113,5 @@ int I_RegisterSong(void* data, int length)
 	// does nothing
 	return 0;
 }
+
+#endif

@@ -846,8 +846,8 @@ file(GLOB EDITOR_SCRIPT_SOURCES tools/script/*.cpp)
 file(GLOB EDITOR_SOUND_INCLUDES tools/sound/*.h)
 file(GLOB EDITOR_SOUND_SOURCES tools/sound/*.cpp)
 
-file(GLOB DOOMCLASSIC_INCLUDES ../doomclassic/doom/*.h)
-file(GLOB DOOMCLASSIC_SOURCES ../doomclassic/doom/*.cpp)
+file(GLOB DOOMCLASSIC_INCLUDES ../doomclassic/doom/doomlib.h)
+file(GLOB DOOMCLASSIC_SOURCES ../doomclassic/doom/doomlib.cpp)
 
 set(DOOMCLASSIC_STUBAUDIO_SOURCES ../doomclassic/doom/i_sound_stub.cpp)
 set(DOOMCLASSIC_OPENAL_SOURCES ../doomclassic/doom/i_sound_openal.cpp)
@@ -1425,7 +1425,7 @@ if(MSVC)
 	list(REMOVE_ITEM DOOM3_PRECOMPILED_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/renderer/jobs/ShadowShared.cpp)
 	list(REMOVE_ITEM DOOM3_PRECOMPILED_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/renderer/RenderLog.cpp)
         list(REMOVE_ITEM DOOM3_PRECOMPILED_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/framework/precompiled.cpp)
-	list(REMOVE_ITEM DOOM3_PRECOMPILED_SOURCES ${DOOMCLASSIC_SOURCES})
+	#list(REMOVE_ITEM DOOM3_PRECOMPILED_SOURCES ${DOOMCLASSIC_SOURCES})
 	list(REMOVE_ITEM DOOM3_PRECOMPILED_SOURCES ${DOOMCLASSIC_BFG_SOURCES})
 
 	
