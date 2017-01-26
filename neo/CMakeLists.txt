@@ -862,8 +862,8 @@ list(REMOVE_ITEM DOOMCLASSIC_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/../doomclassic/
 list(REMOVE_ITEM DOOMCLASSIC_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/../doomclassic/src/i_sound_openal.cpp)
 list(REMOVE_ITEM DOOMCLASSIC_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/../doomclassic/src/i_sound_win32.cpp)
 
-file(GLOB TIMIDITY_INCLUDES libs/timidity/*.h)
-file(GLOB TIMIDITY_SOURCES libs/timidity/*.cpp)
+file(GLOB TIMIDITY_INCLUDES ../doomclassic/src/timidity/*.h)
+file(GLOB TIMIDITY_SOURCES ../doomclassic/src/timidity/*.cpp)
 
 file(GLOB_RECURSE WIN32_INCLUDES sys/win32/*.h)
 #file(GLOB_RECURSE WIN32_SOURCES sys/win32/*.cpp)
