@@ -315,10 +315,10 @@ short	LittleShort( short l )
 {
 	return _LittleShort( l );
 }
-int		BigLong( int l )
-{
-	return _BigLong( l );
-}
+//int		BigLong( int l )
+//{
+//	return _BigLong( l );
+//}
 int		LittleLong( int l )
 {
 	return _LittleLong( l );
