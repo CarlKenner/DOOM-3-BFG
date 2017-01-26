@@ -114,11 +114,12 @@ void RiftHmd::destroy() {
 		// ovr_DestroyTextureSwapChain(hmd, sceneTextureSet); // causes hang/crash
 		sceneTextureSet = nullptr;
 	}
-	glDeleteRenderbuffers(1, &depthBuffer);
-	depthBuffer = 0;
-	glDeleteFramebuffers(1, &sceneFrameBuffer);
-	sceneFrameBuffer = 0;
+	// Carl: don't shut down unless we initialized
 	if (hmd) {
+		glDeleteRenderbuffers(1, &depthBuffer);
+		depthBuffer = 0;
+		glDeleteFramebuffers(1, &sceneFrameBuffer);
+		sceneFrameBuffer = 0;
 		// ovr_Destroy(hmd); // causes hang/crash
 		hmd = nullptr;
 	}

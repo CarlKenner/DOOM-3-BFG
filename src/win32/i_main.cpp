@@ -818,6 +818,31 @@ void DoMain (HINSTANCE hInstance)
 #endif
 
 		Args = new DArgs(__argc, __argv);
+// Carl: If we are part of Doom 3 BFG Edition, use the default settings
+#ifdef __DOOM__
+		FString classicdoom_commandline[] = {
+			"-width 640",
+			"-height 480",
+			"+fullscreen false",
+			"+vid_vsync false",
+			"+vr_mode 8",
+			"+turbo 80",
+			"+movebob 0.05",
+			"+screenblocks 11",
+			"+con_scaletext 1",
+			"+hud_scale 1",
+			"+hud_althudscale 1",
+			"+crosshair 1",
+			"+crosshairscale 1",
+			"+use_joystick true",
+			"+joy_xinput true",
+			"+m_use_mouse false",
+			"+smooth_mouse false",
+			"+wipetype none",
+			"+vr_view_yoffset 4" };
+
+		Args->AppendArgs(19, classicdoom_commandline);
+#endif
 
 		// Under XP, get our session ID so we can know when the user changes/locks sessions.
 		// Since we need to remain binary compatible with older versions of Windows, we
@@ -1217,7 +1242,12 @@ static void infiniterecursion(int foo)
 //
 //==========================================================================
 
-int WINAPI WinMain (HINSTANCE hInstance, HINSTANCE nothing, LPSTR cmdline, int nCmdShow)
+// Carl: If we are part of Doom 3 BFG Edition, they supply the WinMain function.
+#ifdef __DOOM__
+int ClassicWinMain(HINSTANCE hInstance, HINSTANCE nothing, LPSTR cmdline, int nCmdShow)
+#else
+int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE nothing, LPSTR cmdline, int nCmdShow)
+#endif
 {
 	g_hInst = hInstance;
 
