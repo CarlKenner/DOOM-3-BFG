@@ -296,7 +296,7 @@ const char * Sys_GetCmdLine() {
 Sys_ReLaunch
 ========================
 */
-void Sys_ReLaunch() {
+void Sys_ReLaunch( char *args ) {
 	TCHAR				szPathOrig[MAX_PRINT_MSG];
 	STARTUPINFO			si;
 	PROCESS_INFORMATION	pi;
@@ -308,7 +308,11 @@ void Sys_ReLaunch() {
 	//     the command-line +" +set com_skipIntroVideos 1" anyway and it was painful on POSIX systems
 	//     so let's just add it here.
 	idStr cmdLine = Sys_GetCmdLine();
-	if( cmdLine.Find( "com_skipIntroVideos" ) < 0 )
+	if ( args )
+	{
+		cmdLine.Append( args );
+	}
+	else if( cmdLine.Find( "com_skipIntroVideos" ) < 0 )
 	{
 		cmdLine.Append( " +set com_skipIntroVideos 1" );
 	}
@@ -1478,12 +1482,24 @@ EXCEPTION_DISPOSITION __cdecl _except_handler( struct _EXCEPTION_RECORD *Excepti
 							/*	FPU_EXCEPTION_INEXACT_RESULT |			*/	\
 								0
 
+int ClassicWinMain(HINSTANCE hInstance, HINSTANCE nothing, LPSTR cmdline, int nCmdShow);
+
 /*
 ==================
 WinMain
 ==================
 */
 int WINAPI WinMain( HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow ) {
+
+	// Carl: if they are trying to launch a classic doom IWAD, then launch doom classic instead
+	for (int i = 1; i < __argc; ++i)
+	{
+		if ( idStr::Icmp(__argv[i], "-iwad") == 0 )
+		{
+			ClassicWinMain( hInstance, hPrevInstance, "", nCmdShow );
+			return 0;
+		}
+	}
 
 	const HCURSOR hcurSave = ::SetCursor( LoadCursor( 0, IDC_WAIT ) );
 

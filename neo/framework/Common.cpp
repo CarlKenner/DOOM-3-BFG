@@ -2059,7 +2059,7 @@ bool idCommonLocal::ProcessEvent( const sysEvent_t* event )
 	if( IsPlayingDoomClassic() )
 	{
 		// Translate the event to Doom classic format.
-		event_t classicEvent;
+		event_t classicEvent = {};
 		if( event->evType == SE_KEY )
 		{
 		
@@ -2133,7 +2133,18 @@ idCommonLocal::SwitchToGame
 */
 void idCommonLocal::SwitchToGame( currentGame_t newGame )
 {
-	idealCurrentGame = newGame;
+	// Carl: restart in gz3doom mode if they choose a classic game
+	switch (newGame)
+	{
+		case DOOM_CLASSIC:
+			Sys_ReLaunch(" -iwad doom");
+			break;
+		case DOOM2_CLASSIC:
+			Sys_ReLaunch(" -iwad doom2");
+			break;
+		default:
+			idealCurrentGame = newGame;
+	}
 }
 
 /*
