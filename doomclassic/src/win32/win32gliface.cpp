@@ -844,7 +844,8 @@ void Win32GLVideo::Shutdown()
 	if (m_hRC)
 	{
 		wglMakeCurrent(0, 0);
-		wglDeleteContext(m_hRC);
+		// Carl: It hangs here on exit
+		//wglDeleteContext(m_hRC);
 	}
 	if (m_hDC) ReleaseDC(m_Window, m_hDC);
 }

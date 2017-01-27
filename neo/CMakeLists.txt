@@ -98,6 +98,8 @@ set( ZLIB_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/libs/zlib;${CMAKE_CURRENT_SOUR
 #set( ZLIB_LIBRARIES z )
 #set( ZLIB_LIBRARY z )
 set( LZMA_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../doomclassic/lzma/C" )
+set( GME_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/game-music-emu" )
+set( GME_LIBRARIES gme )
 
 option(SDL2
 		"Use SDL2 instead of SDL1.2" ON)
@@ -939,6 +941,16 @@ file(GLOB DOOMCLASSIC_INCLUDES ../doomclassic/src/*.h)
 file(GLOB DOOMCLASSIC_SOURCES ../doomclassic/src/*.cpp;../doomclassic/src/*.c)
 include_directories(../doomclassic/src)
 
+file(GLOB DOOMCLASSIC_R_INCLUDES ../doomclassic/src/r_*.h)
+file(GLOB DOOMCLASSIC_R_SOURCES ../doomclassic/src/r_*.cpp)
+list(REMOVE_ITEM DOOMCLASSIC_INCLUDES ${DOOMCLASSIC_R_INCLUDES})
+list(REMOVE_ITEM DOOMCLASSIC_SOURCES ${DOOMCLASSIC_R_SOURCES})
+
+file(GLOB DOOMCLASSIC_VERSIONING_INCLUDES ../doomclassic/src/version.h)
+file(GLOB DOOMCLASSIC_VERSIONING_SOURCES ../doomclassic/src/win32/zdoom.rc)
+list(REMOVE_ITEM DOOMCLASSIC_INCLUDES ${DOOMCLASSIC_VERSIONING_INCLUDES})
+list(REMOVE_ITEM DOOMCLASSIC_SOURCES ${DOOMCLASSIC_VERSIONING_SOURCES})
+
 file(GLOB DOOMCLASSIC_FRAGGLE_INCLUDES ../doomclassic/src/fragglescript/*.h)
 file(GLOB DOOMCLASSIC_FRAGGLE_SOURCES ../doomclassic/src/fragglescript/*.cpp)
 
@@ -1154,6 +1166,7 @@ file(GLOB SDL_SOURCES sys/sdl/*.cpp)
 
 # Carl: GZ3Doom
 add_subdirectory( ../doomclassic/bzip2 ${CMAKE_CURRENT_BINARY_DIR}/bzip2)
+add_subdirectory( ../doomclassic/game-music-emu ${CMAKE_CURRENT_BINARY_DIR}/game-music-emu)
 add_subdirectory( ../doomclassic/lzma ${CMAKE_CURRENT_BINARY_DIR}/lzma)
 add_subdirectory( ../doomclassic/tools ${CMAKE_CURRENT_BINARY_DIR}/tools)
 add_subdirectory( ../doomclassic/dumb ${CMAKE_CURRENT_BINARY_DIR}/dumb)
@@ -1161,6 +1174,14 @@ add_subdirectory( ../doomclassic/gdtoa ${CMAKE_CURRENT_BINARY_DIR}/gdtoa)
 add_subdirectory( ../doomclassic/wadsrc ${CMAKE_CURRENT_BINARY_DIR}/wadsrc)
 add_subdirectory( ../doomclassic/wadsrc_bm ${CMAKE_CURRENT_BINARY_DIR}/wadsrc_bm)
 add_subdirectory( ../doomclassic/wadsrc_lights ${CMAKE_CURRENT_BINARY_DIR}/wadsrc_lights)
+
+# Update gitinfo.h
+
+add_custom_target( revision_check ALL
+	COMMAND updaterevision ../doomclassic/src/gitinfo.h
+	WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+	DEPENDS updaterevision )
+
 
 source_group("aas" FILES ${AAS_INCLUDES})
 source_group("aas" FILES ${AAS_SOURCES})
@@ -1245,14 +1266,14 @@ source_group("swf" FILES ${SWF_SOURCES})
 source_group("sys" FILES ${SYS_INCLUDES})
 source_group("sys" FILES ${SYS_SOURCES})
 
-source_group("doomclassic" FILES ${DOOMCLASSIC_INCLUDES})
-source_group("doomclassic" FILES ${DOOMCLASSIC_SOURCES})
+source_group("doomclassic\\Header Files" FILES ${DOOMCLASSIC_INCLUDES})
+source_group("doomclassic\\Source Files" FILES ${DOOMCLASSIC_SOURCES})
 
 source_group("doomclassic\\BFG interface" FILES ${DOOMCLASSIC_BFG_INCLUDES} ${DOOMCLASSIC_BFG_SOURCES})
 
-source_group("doomclassic" FILES ${DOOMCLASSIC_STUBAUDIO_SOURCES})
-source_group("doomclassic" FILES ${DOOMCLASSIC_OPENAL_SOURCES})
-#source_group("doomclassic" FILES ${DOOMCLASSIC_XAUDIO2_SOURCES})
+source_group("doomclassic\\Audio Files" FILES ${DOOMCLASSIC_STUBAUDIO_SOURCES})
+source_group("doomclassic\\Audio Files" FILES ${DOOMCLASSIC_OPENAL_SOURCES})
+#source_group("doomclassic\\Audio Files" FILES ${DOOMCLASSIC_XAUDIO2_SOURCES})
 
 source_group("doomclassic\\Fragglescript" FILES ${DOOMCLASSIC_FRAGGLE_INCLUDES} ${DOOMCLASSIC_FRAGGLE_SOURCES})
 source_group("doomclassic\\Games\\Doom Game" FILES ${DOOMCLASSIC_G_DOOM_INCLUDES} ${DOOMCLASSIC_G_DOOM_SOURCES})
@@ -1262,17 +1283,19 @@ source_group("doomclassic\\Games\\Strife Game" FILES ${DOOMCLASSIC_G_STRIFE_INCL
 source_group("doomclassic\\Games\\Raven Shared" FILES ${DOOMCLASSIC_G_RAVEN_INCLUDES} ${DOOMCLASSIC_G_RAVEN_SOURCES})
 source_group("doomclassic\\Shared Game" FILES ${DOOMCLASSIC_G_SHARED_INCLUDES} ${DOOMCLASSIC_G_SHARED_SOURCES})
 source_group("doomclassic\\OpenGL Renderer" FILES ${DOOMCLASSIC_GL_INCLUDES} ${DOOMCLASSIC_GL_SOURCES})
+source_group("doomclassic\\Render Core" FILES ${DOOMCLASSIC_R_INCLUDES} ${DOOMCLASSIC_R_SOURCES})
 source_group("doomclassic\\Intermission" FILES ${DOOMCLASSIC_INTERMISSION_INCLUDES} ${DOOMCLASSIC_INTERMISSION_SOURCES})
 source_group("doomclassic\\Menu" FILES ${DOOMCLASSIC_MENU_INCLUDES} ${DOOMCLASSIC_MENU_SOURCES})
 source_group("doomclassic\\Audio Files\\OPL Synth" FILES ${DOOMCLASSIC_OPLSYNTH_INCLUDES} ${DOOMCLASSIC_OPLSYNTH_SOURCES})
 source_group("doomclassic\\POSIX Files" FILES ${DOOMCLASSIC_POSIX_INCLUDES} ${DOOMCLASSIC_POSIX_SOURCES})
-source_group("doomclassic\\Resource Headers/Sources" FILES ${DOOMCLASSIC_R_DATA_INCLUDES} ${DOOMCLASSIC_R_DATA_SOURCES})
 source_group("doomclassic\\Resource Files" FILES ${DOOMCLASSIC_RESOURCE_INCLUDES} ${DOOMCLASSIC_RESOURCE_SOURCES})
 source_group("doomclassic\\SFMT" FILES ${DOOMCLASSIC_SFMT_INCLUDES} ${DOOMCLASSIC_SFMT_SOURCES})
 source_group("doomclassic\\Audio Files" FILES ${DOOMCLASSIC_SOUND_INCLUDES} ${DOOMCLASSIC_SOUND_SOURCES})
 source_group("doomclassic\\Audio Files\\WildMidi" FILES ${DOOMCLASSIC_WILDMIDI_INCLUDES} ${DOOMCLASSIC_WILDMIDI_SOURCES})
+source_group("doomclassic\\Render Data\\Resources" FILES ${DOOMCLASSIC_R_DATA_INCLUDES} ${DOOMCLASSIC_R_DATA_SOURCES})
 source_group("doomclassic\\Render Data\\Textures" FILES ${DOOMCLASSIC_TEXTURES_INCLUDES} ${DOOMCLASSIC_TEXTURES_SOURCES})
 source_group("doomclassic\\Decorate++" FILES ${DOOMCLASSIC_THINGDEF_INCLUDES} ${DOOMCLASSIC_THINGDEF_SOURCES})
+source_group("doomclassic\\Versioning" FILES ${DOOMCLASSIC_VERSIONING_INCLUDES} ${DOOMCLASSIC_VERSIONING_SOURCES})
 source_group("doomclassic\\Win32 Files" FILES ${DOOMCLASSIC_WIN32_INCLUDES} ${DOOMCLASSIC_WIN32_SOURCES})
 source_group("doomclassic\\xlat" FILES ${DOOMCLASSIC_XLAT_INCLUDES} ${DOOMCLASSIC_XLAT_SOURCES})
 
@@ -1415,6 +1438,8 @@ set(DOOM3_INCLUDES
 			${COMMON_INCLUDES}
 
 			${DOOMCLASSIC_INCLUDES}
+			${DOOMCLASSIC_R_INCLUDES}
+			${DOOMCLASSIC_VERSIONING_INCLUDES}
 			${DOOMCLASSIC_BFG_INCLUDES}
 			${DOOMCLASSIC_FRAGGLE_INCLUDES}
 			${DOOMCLASSIC_G_DOOM_INCLUDES}
@@ -1480,6 +1505,8 @@ set(DOOM3_SOURCES
 			${COMMON_SOURCES}
 
 			${DOOMCLASSIC_SOURCES}
+			${DOOMCLASSIC_R_SOURCES}
+			${DOOMCLASSIC_VERSIONING_SOURCES}
 			${DOOMCLASSIC_BFG_SOURCES}
 			${DOOMCLASSIC_FRAGGLE_SOURCES}
 			${DOOMCLASSIC_G_DOOM_SOURCES}
@@ -1690,6 +1717,7 @@ if(MSVC)
 	list(REMOVE_ITEM DOOM3_PRECOMPILED_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/renderer/RenderLog.cpp)
         list(REMOVE_ITEM DOOM3_PRECOMPILED_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/framework/precompiled.cpp)
 	list(REMOVE_ITEM DOOM3_PRECOMPILED_SOURCES ${DOOMCLASSIC_SOURCES})
+	list(REMOVE_ITEM DOOM3_PRECOMPILED_SOURCES ${DOOMCLASSIC_R_SOURCES})
 	list(REMOVE_ITEM DOOM3_PRECOMPILED_SOURCES ${DOOMCLASSIC_BFG_SOURCES})
 	list(REMOVE_ITEM DOOM3_PRECOMPILED_SOURCES ${DOOMCLASSIC_FRAGGLE_SOURCES})
 	list(REMOVE_ITEM DOOM3_PRECOMPILED_SOURCES ${DOOMCLASSIC_G_DOOM_SOURCES})

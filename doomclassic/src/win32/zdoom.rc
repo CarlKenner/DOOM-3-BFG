@@ -41,6 +41,7 @@ BEGIN
     "#include ""../gitinfo.h""\r\0"
 END
 
+#if !defined(__DOOM__)
 3 TEXTINCLUDE 
 BEGIN
     "#ifndef NO_MANIFEST\r\n"
@@ -88,6 +89,7 @@ BEGIN
     "    END\r\n"
     "END\r\n"
 END
+#endif
 
 #endif    // APSTUDIO_INVOKED
 
@@ -97,9 +99,11 @@ END
 // Icon
 //
 
+#if !defined(__DOOM__)
 // Icon with lowest ID value placed first to ensure application icon
 // remains consistent on all systems.
 IDI_ICON1               ICON                    "icon1.ico"
+
 IDI_BOING1              ICON                    "boing1.ico"
 IDI_BOING2              ICON                    "boing2.ico"
 IDI_BOING3              ICON                    "boing3.ico"
@@ -108,6 +112,7 @@ IDI_BOING5              ICON                    "boing5.ico"
 IDI_BOING6              ICON                    "boing6.ico"
 IDI_BOING7              ICON                    "boing7.ico"
 IDI_BOING8              ICON                    "boing8.ico"
+#endif
 
 /////////////////////////////////////////////////////////////////////////////
 //
@@ -458,7 +463,7 @@ IDB_DEADGUY             BITMAP                  "deadguy.bmp"
 
 
 
-#ifndef APSTUDIO_INVOKED
+#if !defined(APSTUDIO_INVOKED) && !defined(__DOOM__)
 /////////////////////////////////////////////////////////////////////////////
 //
 // Generated from the TEXTINCLUDE 3 resource.
