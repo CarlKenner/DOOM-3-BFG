@@ -1,68 +1,111 @@
-/*
-===========================================================================
+// Emacs style mode select	 -*- C++ -*- 
+//-----------------------------------------------------------------------------
+//
+// $Id:$
+//
+// Copyright (C) 1993-1996 by id Software, Inc.
+//
+// This source is available for distribution and/or modification
+// only under the terms of the DOOM Source Code License as
+// published by id Software. All rights reserved.
+//
+// The source is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// FITNESS FOR A PARTICULAR PURPOSE. See the DOOM Source Code License
+// for more details.
+//
+// $Log:$
+//
+// DESCRIPTION:
+//		Main loop menu stuff.
+//		Random number LUT.
+//		Default Config File.
+//		PCX Screenshots.
+//
+//-----------------------------------------------------------------------------
 
-Doom 3 BFG Edition GPL Source Code
-Copyright (C) 1993-2012 id Software LLC, a ZeniMax Media company. 
-
-This file is part of the Doom 3 BFG Edition GPL Source Code ("Doom 3 BFG Edition Source Code").  
-
-Doom 3 BFG Edition Source Code is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-Doom 3 BFG Edition Source Code is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with Doom 3 BFG Edition Source Code.  If not, see <http://www.gnu.org/licenses/>.
-
-In addition, the Doom 3 BFG Edition Source Code is also subject to certain additional terms. You should have received a copy of these additional terms immediately following the terms and conditions of the GNU General Public License which accompanied the Doom 3 BFG Edition Source Code.  If not, please request a copy in writing from id Software at the address below.
-
-If you have questions concerning this license or the applicable additional terms, you may contact in writing id Software LLC, c/o ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
-
-===========================================================================
-*/
-
-#include "Precompiled.h"
-#include "globaldata.h"
-
-
-#ifdef __GNUG__
-#pragma implementation "m_bbox.h"
-#endif
 #include "m_bbox.h"
+#include "p_local.h"
 
-#include "doomtype.h"
+//==========================================================================
+//
+//
+//
+//==========================================================================
 
-
-
-void M_ClearBox (fixed_t *box)
+FBoundingBox::FBoundingBox(fixed_t x, fixed_t y, fixed_t radius)
 {
-    box[BOXTOP] = box[BOXRIGHT] = MININT;
-    box[BOXBOTTOM] = box[BOXLEFT] = MAXINT;
-}
-
-void
-M_AddToBox
-( fixed_t*	box,
-  fixed_t	x,
-  fixed_t	y )
-{
-    if (x<box[BOXLEFT])
-	box[BOXLEFT] = x;
-    else if (x>box[BOXRIGHT])
-	box[BOXRIGHT] = x;
-    if (y<box[BOXBOTTOM])
-	box[BOXBOTTOM] = y;
-    else if (y>box[BOXTOP])
-	box[BOXTOP] = y;
+	m_Box[BOXTOP] = (fixed_t)MIN<SQWORD>((SQWORD)y + radius, FIXED_MAX);
+	m_Box[BOXLEFT] = (fixed_t)MAX<SQWORD>((SQWORD)x - radius, FIXED_MIN);
+	m_Box[BOXRIGHT] = (fixed_t)MIN<SQWORD>((SQWORD)x + radius, FIXED_MAX);
+	m_Box[BOXBOTTOM] = (fixed_t)MAX<SQWORD>((SQWORD)y - radius, FIXED_MIN);
 }
 
 
+//==========================================================================
+//
+//
+//
+//==========================================================================
 
+void FBoundingBox::AddToBox (fixed_t x, fixed_t y)
+{
+	if (x < m_Box[BOXLEFT])
+		m_Box[BOXLEFT] = x;
+	if (x > m_Box[BOXRIGHT])
+		m_Box[BOXRIGHT] = x;
 
+	if (y < m_Box[BOXBOTTOM])
+		m_Box[BOXBOTTOM] = y;
+	if (y > m_Box[BOXTOP])
+		m_Box[BOXTOP] = y;
+}
 
+//==========================================================================
+//
+// FBoundingBox :: BoxOnLineSide
+//
+// Considers the line to be infinite
+// Returns side 0 or 1, -1 if box crosses the line.
+//
+//==========================================================================
+
+int FBoundingBox::BoxOnLineSide (const line_t *ld) const
+{
+	int p1;
+	int p2;
+		
+	if (ld->dx == 0)
+	{ // ST_VERTICAL
+		p1 = m_Box[BOXRIGHT] < ld->v1->x;
+		p2 = m_Box[BOXLEFT] < ld->v1->x;
+		if (ld->dy < 0)
+		{
+			p1 ^= 1;
+			p2 ^= 1;
+		}
+	}
+	else if (ld->dy == 0)
+	{ // ST_HORIZONTAL:
+		p1 = m_Box[BOXTOP] > ld->v1->y;
+		p2 = m_Box[BOXBOTTOM] > ld->v1->y;
+		if (ld->dx < 0)
+		{
+			p1 ^= 1;
+			p2 ^= 1;
+		}
+	}
+	else if ((ld->dy ^ ld->dx) >= 0)
+	{ // ST_POSITIVE:
+		p1 = P_PointOnLineSide (m_Box[BOXLEFT], m_Box[BOXTOP], ld);
+		p2 = P_PointOnLineSide (m_Box[BOXRIGHT], m_Box[BOXBOTTOM], ld);
+	}
+	else
+	{ // ST_NEGATIVE:
+		p1 = P_PointOnLineSide (m_Box[BOXRIGHT], m_Box[BOXTOP], ld);
+		p2 = P_PointOnLineSide (m_Box[BOXLEFT], m_Box[BOXBOTTOM], ld);
+	}
+
+	return (p1 == p2) ? p1 : -1;
+}
 

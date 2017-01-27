@@ -1,137 +1,92 @@
-/*
-===========================================================================
+// Emacs style mode select	 -*- C++ -*- 
+//-----------------------------------------------------------------------------
+//
+// $Id:$
+//
+// Copyright (C) 1993-1996 by id Software, Inc.
+//
+// This source is available for distribution and/or modification
+// only under the terms of the DOOM Source Code License as
+// published by id Software. All rights reserved.
+//
+// The source is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// FITNESS FOR A PARTICULAR PURPOSE. See the DOOM Source Code License
+// for more details.
+//
+// DESCRIPTION:
+//		Refresh/render internal state variables (global).
+//
+//-----------------------------------------------------------------------------
 
-Doom 3 BFG Edition GPL Source Code
-Copyright (C) 1993-2012 id Software LLC, a ZeniMax Media company. 
 
-This file is part of the Doom 3 BFG Edition GPL Source Code ("Doom 3 BFG Edition Source Code").  
-
-Doom 3 BFG Edition Source Code is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-Doom 3 BFG Edition Source Code is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with Doom 3 BFG Edition Source Code.  If not, see <http://www.gnu.org/licenses/>.
-
-In addition, the Doom 3 BFG Edition Source Code is also subject to certain additional terms. You should have received a copy of these additional terms immediately following the terms and conditions of the GNU General Public License which accompanied the Doom 3 BFG Edition Source Code.  If not, please request a copy in writing from id Software at the address below.
-
-If you have questions concerning this license or the applicable additional terms, you may contact in writing id Software LLC, c/o ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
-
-===========================================================================
-*/
-
-#ifndef __R_STATE__
-#define __R_STATE__
+#ifndef __R_STATE_H__
+#define __R_STATE_H__
 
 // Need data structure definitions.
-#include "d_player.h"
-#include "r_data.h"
-
-
-
-#ifdef __GNUG__
-#pragma interface
-#endif
-
-
+#include "doomtype.h"
+#include "r_defs.h"
+#include "r_data/sprites.h"
 
 //
 // Refresh internal data structures,
-//  for rendering.
+//	for rendering.
 //
 
-// needed for texture pegging
-
-// needed for pre rendering (fracs)
-extern fixed_t*		spritewidth;
-
-extern fixed_t*		spriteoffset;
-extern fixed_t*		spritetopoffset;
-
-extern lighttable_t*	colormaps;
-
-extern int		viewwidth;
-extern int		scaledviewwidth;
-extern int		viewheight;
-
-extern int		firstflat;
-
-// for global animation
-extern int*		flattranslation;	
-extern int*		texturetranslation;	
-
-
-// Sprite....
-extern int		firstspritelump;
-extern int		lastspritelump;
-extern int		numspritelumps;
-
-
+extern "C" int			viewwidth;
+extern "C" int			viewheight;
 
 //
 // Lookup tables for map data.
 //
-extern int		numsprites;
-extern spritedef_t*	sprites;
+extern TArray<spritedef_t> sprites;
+extern DWORD NumStdSprites;
 
-extern int		numvertexes;
-extern vertex_t*	vertexes;
+extern int				numvertexes;
+extern vertex_t*		vertexes;
+extern int				numvertexdatas;
+extern vertexdata_t*		vertexdatas;
 
-extern int		numsegs;
-extern seg_t*		segs;
+extern int				numsegs;
+extern seg_t*			segs;
 
-extern int		numsectors;
-extern sector_t*	sectors;
+extern int				numsectors;
+extern sector_t*		sectors;
 
-extern int		numsubsectors;
-extern subsector_t*	subsectors;
+extern int				numsubsectors;
+extern subsector_t* 	subsectors;
 
-extern int		numnodes;
-extern node_t*		nodes;
+extern int				numnodes;
+extern node_t*			nodes;
 
-extern int		numlines;
-extern line_t*		lines;
+extern int				numlines;
+extern line_t*			lines;
 
-extern int		numsides;
-extern side_t*		sides;
+extern int				numsides;
+extern side_t*			sides;
+
+extern int				numzones;
+extern zone_t*			zones;
+
+extern node_t * 		gamenodes;
+extern int 				numgamenodes;
+
+extern subsector_t * 	gamesubsectors;
+extern int 				numgamesubsectors;
 
 
 //
 // POV data.
 //
-extern fixed_t		viewx;
-extern fixed_t		viewy;
-extern fixed_t		viewz;
+extern fixed_t			viewz;
+extern angle_t			viewangle;
 
-extern angle_t		viewangle;
-extern player_t*	viewplayer;
+extern AActor*			camera;		// [RH] camera instead of viewplayer
+extern sector_t*		viewsector;	// [RH] keep track of sector viewing from
 
+extern angle_t			xtoviewangle[MAXWIDTH+1];
+extern int				FieldOfView;
 
-// ?
-extern angle_t		clipangle;
+int R_FindSkin (const char *name, int pclass);	// [RH] Find a skin
 
-extern int		viewangletox[FINEANGLES/2];
-extern angle_t		xtoviewangle[SCREENWIDTH+1];
-//extern fixed_t		finetangent[FINEANGLES/2];
-
-extern fixed_t		rw_distance;
-extern angle_t		rw_normalangle;
-
-
-
-// angle to line origin
-extern int		rw_angle1;
-
-// Segs count?
-extern int		sscount;
-
-
-
-#endif
-
+#endif // __R_STATE_H__

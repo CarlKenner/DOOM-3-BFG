@@ -1,169 +1,409 @@
 /*
 
-TiMidity -- Experimental MIDI to WAVE converter
-Copyright (C) 1995 Tuukka Toivonen <toivonen@clinet.fi>
+	TiMidity -- Experimental MIDI to WAVE converter
+	Copyright (C) 1995 Tuukka Toivonen <toivonen@clinet.fi>
 
-Suddenly, you realize that this program is free software; you get
-an overwhelming urge to redistribute it and/or modify it under the
-terms of the GNU General Public License as published by the Free
-Software Foundation; either version 2 of the License, or (at your
-option) any later version.
+	This library is free software; you can redistribute it and/or
+	modify it under the terms of the GNU Lesser General Public
+	License as published by the Free Software Foundation; either
+	version 2.1 of the License, or (at your option) any later version.
 
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
+	This library is distributed in the hope that it will be useful,
+	but WITHOUT ANY WARRANTY; without even the implied warranty of
+	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+	Lesser General Public License for more details.
 
-You should have received another copy of the GNU General Public
-License along with this program; if not, write to the Free
-Software Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
-I bet they'll be amazed.
+	You should have received a copy of the GNU Lesser General Public
+	License along with this library; if not, write to the Free Software
+	Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 
-mix.c */
+	mix.c
+
+*/
 
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 
-#include "config.h"
-#include "common.h"
-#include "instrum.h"
-#include "playmidi.h"
-#include "output.h"
-#include "controls.h"
-#include "tables.h"
-#include "resample.h"
-#include "mix.h"
+#include "timidity.h"
+#include "templates.h"
+#include "c_cvars.h"
 
-/* Returns 1 if envelope runs out */
-int recompute_envelope(int v)
+namespace Timidity
 {
-	int stage;
 
-	stage = voice[v].envelope_stage;
+static int convert_envelope_rate(Renderer *song, BYTE rate)
+{
+	int r;
 
-	if (stage>5)
-	{
-		/* Envelope ran out. */
-		int tmp=(voice[v].status == VOICE_DIE); /* Already displayed as dead */
-		voice[v].status = VOICE_FREE;
-		if(!tmp)
-			ctl->note(v);
-		return 1;
-	}
+	r  = 3 - ((rate>>6) & 0x3);
+	r *= 3;
+	r  = (int)(rate & 0x3f) << r; /* 6.9 fixed point */
 
-	if (voice[v].sample->modes & MODES_ENVELOPE)
-	{
-		if (voice[v].status==VOICE_ON || voice[v].status==VOICE_SUSTAINED)
-		{
-			if (stage>2)
-			{
-				/* Freeze envelope until note turns off. Trumpets want this. */
-				voice[v].envelope_increment=0;
-				return 0;
-			}
-		}
-	}
-	voice[v].envelope_stage=stage+1;
-
-	if (voice[v].envelope_volume==voice[v].sample->envelope_offset[stage])
-		return recompute_envelope(v);
-	voice[v].envelope_target=voice[v].sample->envelope_offset[stage];
-	voice[v].envelope_increment = voice[v].sample->envelope_rate[stage];
-	if (voice[v].envelope_target<voice[v].envelope_volume)
-		voice[v].envelope_increment = -voice[v].envelope_increment;
-	return 0;
+	/* 15.15 fixed point. */
+	return int(((r * 44100) / song->rate) * song->control_ratio) << 9;
 }
 
-void apply_envelope_to_amp(int v)
+void Envelope::Init(Renderer *song, Voice *v)
 {
-	float lamp=voice[v].left_amp, ramp;
-	 int32_t  la,ra;
-	if (voice[v].panned == PANNED_MYSTERY)
+	Type = v->sample->type;
+	env.bUpdating = true;
+	if (Type == INST_GUS)
 	{
-		ramp=voice[v].right_amp;
-		if (voice[v].tremolo_phase_increment)
-		{
-			lamp *= voice[v].tremolo_volume;
-			ramp *= voice[v].tremolo_volume;
-		}
-		if (voice[v].sample->modes & MODES_ENVELOPE)
-		{
-			lamp *= (float)vol_table[voice[v].envelope_volume>>23];
-			ramp *= (float)vol_table[voice[v].envelope_volume>>23];
-		}
-
-		la = (int32_t)FSCALE(lamp,AMP_BITS);
-
-		if (la>MAX_AMP_VALUE)
-			la=MAX_AMP_VALUE;
-
-		ra = (int32_t)FSCALE(ramp,AMP_BITS);
-		if (ra>MAX_AMP_VALUE)
-			ra=MAX_AMP_VALUE;
-
-
-		voice[v].left_mix=FINAL_VOLUME(la);
-		voice[v].right_mix=FINAL_VOLUME(ra);
+		gf1.Init(song, v);
+		gf1.ApplyToAmp(v);
 	}
 	else
 	{
-		if (voice[v].tremolo_phase_increment)
-			lamp *= voice[v].tremolo_volume;
-		if (voice[v].sample->modes & MODES_ENVELOPE)
-			lamp *= (float)vol_table[voice[v].envelope_volume>>23];
-
-		la = (int32_t)FSCALE(lamp,AMP_BITS);
-
-		if (la>MAX_AMP_VALUE)
-			la=MAX_AMP_VALUE;
-
-		voice[v].left_mix=FINAL_VOLUME(la);
+		sf2.Init(song, v);
+		sf2.ApplyToAmp(v);
 	}
 }
 
-static int update_envelope(int v)
+void GF1Envelope::Init(Renderer *song, Voice *v)
 {
-	voice[v].envelope_volume += voice[v].envelope_increment;
-	/* Why is there no ^^ operator?? */
-	if (((voice[v].envelope_increment < 0) &&
-		(voice[v].envelope_volume <= voice[v].envelope_target)) ||
-		((voice[v].envelope_increment > 0) &&
-		(voice[v].envelope_volume >= voice[v].envelope_target)))
+	/* Ramp up from 0 */
+	stage = 0;
+	volume = 0;
+
+	for (int i = 0; i < 6; ++i)
 	{
-		voice[v].envelope_volume = voice[v].envelope_target;
-		if (recompute_envelope(v))
+		offset[i] = v->sample->envelope.gf1.offset[i] << (7 + 15);
+		rate[i] = convert_envelope_rate(song, v->sample->envelope.gf1.rate[i]);
+	}
+	Recompute(v);
+}
+
+void GF1Envelope::Release(Voice *v)
+{
+	if (!(v->sample->modes & PATCH_NO_SRELEASE) || (v->sample->modes & PATCH_FAST_REL))
+	{
+		/* ramp out to minimum volume with rate from final release stage */
+		stage = GF1_RELEASEC+1;
+		target = 0;
+		increment = -rate[GF1_RELEASEC];
+	}
+	else if (v->sample->modes & PATCH_SUSTAIN)
+	{
+		if (stage < GF1_RELEASE)
+		{
+			stage = GF1_RELEASE;
+		}
+		Recompute(v);
+	}
+	bUpdating = true;
+}
+
+/* Returns 1 if envelope runs out */
+bool GF1Envelope::Recompute(Voice *v)
+{
+	int newstage;
+
+	newstage = stage;
+
+	if (newstage > GF1_RELEASEC)
+	{
+		/* Envelope ran out. */
+		increment = 0;
+		bUpdating = false;
+		v->status &= ~(VOICE_SUSTAINING | VOICE_LPE);
+		v->status |= VOICE_RELEASING;
+		/* play sampled release */
+		return 0;
+	}
+
+	if (newstage == GF1_RELEASE && !(v->status & VOICE_RELEASING) && (v->sample->modes & PATCH_SUSTAIN))
+	{
+		v->status |= VOICE_SUSTAINING;
+		/* Freeze envelope until note turns off. Trumpets want this. */
+		increment = 0;
+		bUpdating = false;
+	}
+	else
+	{
+		stage = newstage + 1;
+
+		if (volume == offset[newstage])
+		{
+			return Recompute(v);
+		}
+		target = offset[newstage];
+		increment = rate[newstage];
+		if (target < volume)
+			increment = -increment;
+	}
+
+	return 0;
+}
+
+bool GF1Envelope::Update(Voice *v)
+{
+	volume += increment;
+	if (((increment < 0) && (volume <= target)) || ((increment > 0) && (volume >= target)))
+	{
+		volume = target;
+		if (Recompute(v))
+		{
 			return 1;
+		}
 	}
 	return 0;
 }
 
-static void update_tremolo(int v)
+void GF1Envelope::ApplyToAmp(Voice *v)
 {
-	 int32_t depth=voice[v].sample->tremolo_depth<<7;
+	double env_vol = v->attenuation;
+	double final_amp;
 
-	if (voice[v].tremolo_sweep)
+	final_amp = FINAL_MIX_SCALE;
+	if (v->tremolo_phase_increment != 0)
+	{ // [RH] FIXME: This is wrong. Tremolo should offset the
+	  // envelope volume, not scale it.
+		env_vol *= v->tremolo_volume;
+	}
+	env_vol *= volume / float(1 << 30);
+	env_vol = calc_gf1_amp(env_vol);
+	env_vol *= final_amp;
+	v->left_mix = float(env_vol * v->left_offset);
+	v->right_mix = float(env_vol * v->right_offset);
+}
+
+void SF2Envelope::Init(Renderer *song, Voice *v)
+{
+	stage = 0;
+	volume = 0;
+	DelayTime = v->sample->envelope.sf2.delay_vol;
+	AttackTime = v->sample->envelope.sf2.attack_vol;
+	HoldTime = v->sample->envelope.sf2.hold_vol;
+	DecayTime = v->sample->envelope.sf2.decay_vol;
+	SustainLevel = v->sample->envelope.sf2.sustain_vol;
+	ReleaseTime = v->sample->envelope.sf2.release_vol;
+	SampleRate = song->rate;
+	HoldStart = 0;
+	RateMul = song->control_ratio / song->rate;
+	RateMul_cB = RateMul * 960;
+	bUpdating = true;
+}
+
+void SF2Envelope::Release(Voice *v)
+{
+	if (stage == SF2_ATTACK)
+	{
+		// The attack stage does not use an attenuation in cB like all the rest.
+		volume = log10(volume) * -200;
+	}
+	stage = SF2_RELEASE;
+	bUpdating = true;
+}
+
+static double timecent_to_sec(float timecent)
+{
+	if (timecent == -32768)
+		return 0;
+	return pow(2.0, timecent / 1200.0);
+}
+
+static double calc_rate(double ratemul, double sec)
+{
+	if (sec < 0.006)
+		sec = 0.006;
+	return ratemul / sec;
+}
+
+static void shutoff_voice(Voice *v)
+{
+	v->status &= ~(VOICE_SUSTAINING | VOICE_LPE);
+	v->status |= VOICE_RELEASING | VOICE_STOPPING;
+}
+
+static bool check_release(double RateMul, double sec)
+{
+	double rate = calc_rate(960 * RateMul, sec);
+
+	// Is release rate very fast? If so, don't do the release, but do
+	// the voice off ramp instead.
+	return (rate < 960/20);
+}
+
+/* Returns 1 if envelope runs out */
+bool SF2Envelope::Update(Voice *v)
+{
+	double sec;
+	double newvolume = 0;
+
+	// NOTE! The volume scale is different for different stages of the
+	// envelope generator:
+	// Attack stage goes from 0.0 -> 1.0, multiplied directly to the output.
+	// The following stages go from 0 -> -1000 cB (but recorded positively)
+	switch (stage)
+	{
+	case SF2_DELAY:
+		if (v->sample_count >= timecent_to_sec(DelayTime) * SampleRate)
+		{
+			stage = SF2_ATTACK;
+			return Update(v);
+		}
+		return 0;
+
+	case SF2_ATTACK:
+		sec = timecent_to_sec(AttackTime);
+		if (sec <= 0)
+		{ // instantaneous attack
+			newvolume = 1;
+		}
+		else
+		{
+			newvolume = volume + calc_rate(RateMul, sec);
+		}
+		if (newvolume >= 1)
+		{
+			volume = 0;
+			HoldStart = v->sample_count;
+			if (HoldTime <= -32768)
+			{ // hold time is 0, so skip right to decay
+				stage = SF2_DECAY;
+			}
+			else
+			{
+				stage = SF2_HOLD;
+			}
+			return Update(v);
+		}
+		break;
+
+	case SF2_HOLD:
+		if (v->sample_count - HoldStart >= timecent_to_sec(HoldTime) * SampleRate)
+		{
+			stage = SF2_DECAY;
+			return Update(v);
+		}
+		return 0;
+
+	case SF2_DECAY:
+		sec = timecent_to_sec(DecayTime);
+		if (sec <= 0)
+		{ // instantaneous decay
+			newvolume = SustainLevel;
+		}
+		else
+		{
+			newvolume = volume + calc_rate(RateMul_cB, sec);
+		}
+		if (newvolume >= SustainLevel)
+		{
+			newvolume = SustainLevel;
+			stage = SF2_SUSTAIN;
+			bUpdating = false;
+			if (!(v->status & VOICE_RELEASING))
+			{
+				v->status |= VOICE_SUSTAINING;
+			}
+		}
+		break;
+
+	case SF2_SUSTAIN:
+		// Stay here until released.
+		return 0;
+
+	case SF2_RELEASE:
+		sec = timecent_to_sec(ReleaseTime);
+		if (sec <= 0)
+		{ // instantaneous release
+			newvolume = 1000;
+		}
+		else
+		{
+			newvolume = volume + calc_rate(RateMul_cB, sec);
+		}
+		if (newvolume >= 960)
+		{
+			stage = SF2_FINISHED;
+			shutoff_voice(v);
+			bUpdating = false;
+			return 1;
+		}
+		break;
+
+	case SF2_FINISHED:
+		return 1;
+	}
+	volume = (float)newvolume;
+	return 0;
+}
+
+/* EMU 8k/10k don't follow spec in regards to volume attenuation.
+ * This factor is used in the equation pow (10.0, cb / FLUID_ATTEN_POWER_FACTOR).
+ * By the standard this should be -200.0. */
+#define FLUID_ATTEN_POWER_FACTOR  (-531.509)
+#define atten2amp(x) pow(10.0, (x) / FLUID_ATTEN_POWER_FACTOR)
+
+static double cb_to_amp(double x)	// centibels to amp
+{
+	return pow(10, x / -200.f);
+}
+
+void SF2Envelope::ApplyToAmp(Voice *v)
+{
+	double amp;
+
+	if (stage == SF2_DELAY)
+	{
+		v->left_mix = 0;
+		v->right_mix = 0;
+		return;
+	}
+
+	amp = v->sample->type == INST_SF2 ? atten2amp(v->attenuation) : cb_to_amp(v->attenuation);
+
+	switch (stage)
+	{
+	case SF2_ATTACK:
+		amp *= volume;
+		break;
+
+	case SF2_HOLD:
+		break;
+
+	default:
+		amp *= cb_to_amp(volume);
+		break;
+	}
+	amp *= FINAL_MIX_SCALE * 0.5;
+	v->left_mix = float(amp * v->left_offset);
+	v->right_mix = float(amp * v->right_offset);
+}
+
+void apply_envelope_to_amp(Voice *v)
+{
+	v->eg1.ApplyToAmp(v);
+}
+
+static void update_tremolo(Voice *v)
+{
+	int depth = v->sample->tremolo_depth << 7;
+
+	if (v->tremolo_sweep != 0)
 	{
 		/* Update sweep position */
 
-		voice[v].tremolo_sweep_position += voice[v].tremolo_sweep;
-		if (voice[v].tremolo_sweep_position>=(1<<SWEEP_SHIFT))
-			voice[v].tremolo_sweep=0; /* Swept to max amplitude */
+		v->tremolo_sweep_position += v->tremolo_sweep;
+		if (v->tremolo_sweep_position >= (1 << SWEEP_SHIFT))
+		{
+			/* Swept to max amplitude */
+			v->tremolo_sweep = 0;
+		}
 		else
 		{
 			/* Need to adjust depth */
-			depth *= voice[v].tremolo_sweep_position;
+			depth *= v->tremolo_sweep_position;
 			depth >>= SWEEP_SHIFT;
 		}
 	}
 
-	voice[v].tremolo_phase += voice[v].tremolo_phase_increment;
+	v->tremolo_phase += v->tremolo_phase_increment;
 
-	/* if (voice[v].tremolo_phase >= (SINE_CYCLE_LENGTH<<RATE_SHIFT))
-	voice[v].tremolo_phase -= SINE_CYCLE_LENGTH<<RATE_SHIFT;  */
-
-	voice[v].tremolo_volume = (float) 
-		(1.0 - FSCALENEG((sine(voice[v].tremolo_phase >> RATE_SHIFT) + 1.0)
+	v->tremolo_volume = (float)
+		(1.0 - FSCALENEG((sine(v->tremolo_phase >> RATE_SHIFT) + 1.0)
 		* depth * TREMOLO_AMPLITUDE_TUNING,
 		17));
 
@@ -172,341 +412,281 @@ static void update_tremolo(int v)
 }
 
 /* Returns 1 if the note died */
-static int update_signal(int v)
+static int update_signal(Voice *v)
 {
-	if (voice[v].envelope_increment && update_envelope(v))
+	if (v->eg1.env.bUpdating && v->eg1.Update(v))
+	{
 		return 1;
-
-	if (voice[v].tremolo_phase_increment)
+	}
+	if (v->tremolo_phase_increment != 0)
+	{
 		update_tremolo(v);
-
+	}
 	apply_envelope_to_amp(v);
 	return 0;
 }
 
-#ifdef LOOKUP_HACK
-#  define MIXATION(a)	*lp++ += mixup[(a<<8) | (uint8)s];
-#else
-#  define MIXATION(a)	*lp++ += (a)*s;
-#endif
-
-static void mix_mystery_signal(sample_t *sp,  int32_t *lp, int v, int count)
+static void mix_mystery_signal(SDWORD control_ratio, const sample_t *sp, float *lp, Voice *v, int count)
 {
-	Voice *vp = voice + v;
 	final_volume_t 
-		left=vp->left_mix, 
-		right=vp->right_mix;
+		left = v->left_mix, 
+		right = v->right_mix;
 	int cc;
 	sample_t s;
 
-	if (!(cc = vp->control_counter))
+	if (!(cc = v->control_counter))
 	{
 		cc = control_ratio;
 		if (update_signal(v))
 			return;	/* Envelope ran out */
-		left = vp->left_mix;
-		right = vp->right_mix;
+
+		left = v->left_mix;
+		right = v->right_mix;
 	}
 
 	while (count)
+	{
 		if (cc < count)
 		{
 			count -= cc;
 			while (cc--)
 			{
 				s = *sp++;
-				MIXATION(left);
-				MIXATION(right);
+				lp[0] += left * s;
+				lp[1] += right * s;
+				lp += 2;
 			}
 			cc = control_ratio;
 			if (update_signal(v))
 				return;	/* Envelope ran out */
-			left = vp->left_mix;
-			right = vp->right_mix;
+			left = v->left_mix;
+			right = v->right_mix;
 		}
 		else
 		{
-			vp->control_counter = cc - count;
+			v->control_counter = cc - count;
 			while (count--)
 			{
 				s = *sp++;
-				MIXATION(left);
-				MIXATION(right);
+				lp[0] += left * s;
+				lp[1] += right * s;
+				lp += 2;
 			}
 			return;
 		}
+	}
 }
 
-static void mix_center_signal(sample_t *sp,  int32_t *lp, int v, int count)
+static void mix_single_signal(SDWORD control_ratio, const sample_t *sp, float *lp, Voice *v, float *ampat, int count)
 {
-	Voice *vp = voice + v;
-	final_volume_t 
-		left=vp->left_mix;
+	final_volume_t amp;
 	int cc;
-	sample_t s;
 
-	if (!(cc = vp->control_counter))
+	if (0 == (cc = v->control_counter))
 	{
 		cc = control_ratio;
 		if (update_signal(v))
-			return;	/* Envelope ran out */
-		left = vp->left_mix;
+			return;		/* Envelope ran out */
 	}
+	amp = *ampat;
 
 	while (count)
+	{
 		if (cc < count)
 		{
 			count -= cc;
 			while (cc--)
 			{
-				s = *sp++;
-				MIXATION(left);
-				MIXATION(left);
+				lp[0] += *sp++ * amp;
+				lp += 2;
 			}
 			cc = control_ratio;
 			if (update_signal(v))
 				return;	/* Envelope ran out */
-			left = vp->left_mix;
+			amp = *ampat;
 		}
 		else
 		{
-			vp->control_counter = cc - count;
+			v->control_counter = cc - count;
 			while (count--)
 			{
-				s = *sp++;
-				MIXATION(left);
-				MIXATION(left);
+				lp[0] += *sp++ * amp;
+				lp += 2;
 			}
 			return;
 		}
+	}
 }
 
-static void mix_single_signal(sample_t *sp,  int32_t *lp, int v, int count)
+static void mix_single_left_signal(SDWORD control_ratio, const sample_t *sp, float *lp, Voice *v, int count)
 {
-	Voice *vp = voice + v;
-	final_volume_t 
-		left=vp->left_mix;
-	int cc;
-	sample_t s;
+	mix_single_signal(control_ratio, sp, lp, v, &v->left_mix, count);
+}
 
-	if (!(cc = vp->control_counter))
+static void mix_single_right_signal(SDWORD control_ratio, const sample_t *sp, float *lp, Voice *v, int count)
+{
+	mix_single_signal(control_ratio, sp, lp + 1, v, &v->right_mix, count);
+}
+
+static void mix_mono_signal(SDWORD control_ratio, const sample_t *sp, float *lp, Voice *v, int count)
+{
+	final_volume_t 
+		left = v->left_mix;
+	int cc;
+
+	if (!(cc = v->control_counter))
 	{
 		cc = control_ratio;
 		if (update_signal(v))
 			return;	/* Envelope ran out */
-		left = vp->left_mix;
+		left = v->left_mix;
 	}
 
 	while (count)
+	{
 		if (cc < count)
 		{
 			count -= cc;
 			while (cc--)
 			{
-				s = *sp++;
-				MIXATION(left);
-				lp++;
+				*lp++ += *sp++ * left;
 			}
 			cc = control_ratio;
 			if (update_signal(v))
 				return;	/* Envelope ran out */
-			left = vp->left_mix;
+			left = v->left_mix;
 		}
 		else
 		{
-			vp->control_counter = cc - count;
+			v->control_counter = cc - count;
 			while (count--)
 			{
-				s = *sp++;
-				MIXATION(left);
-				lp++;
+				*lp++ += *sp++ * left;
 			}
 			return;
 		}
-}
-
-static void mix_mono_signal(sample_t *sp,  int32_t *lp, int v, int count)
-{
-	Voice *vp = voice + v;
-	final_volume_t 
-		left=vp->left_mix;
-	int cc;
-	sample_t s;
-
-	if (!(cc = vp->control_counter))
-	{
-		cc = control_ratio;
-		if (update_signal(v))
-			return;	/* Envelope ran out */
-		left = vp->left_mix;
 	}
-
-	while (count)
-		if (cc < count)
-		{
-			count -= cc;
-			while (cc--)
-			{
-				s = *sp++;
-				MIXATION(left);
-			}
-			cc = control_ratio;
-			if (update_signal(v))
-				return;	/* Envelope ran out */
-			left = vp->left_mix;
-		}
-		else
-		{
-			vp->control_counter = cc - count;
-			while (count--)
-			{
-				s = *sp++;
-				MIXATION(left);
-			}
-			return;
-		}
 }
 
-static void mix_mystery(sample_t *sp,  int32_t *lp, int v, int count)
+static void mix_mystery(SDWORD control_ratio, const sample_t *sp, float *lp, Voice *v, int count)
 {
 	final_volume_t 
-		left=voice[v].left_mix, 
-		right=voice[v].right_mix;
+		left = v->left_mix, 
+		right = v->right_mix;
 	sample_t s;
 
 	while (count--)
 	{
 		s = *sp++;
-		MIXATION(left);
-		MIXATION(right);
+		lp[0] += s * left;
+		lp[1] += s * right;
+		lp += 2;
 	}
 }
 
-static void mix_center(sample_t *sp,  int32_t *lp, int v, int count)
+static void mix_single(const sample_t *sp, float *lp, final_volume_t amp, int count)
 {
-	final_volume_t 
-		left=voice[v].left_mix;
-	sample_t s;
-
 	while (count--)
 	{
-		s = *sp++;
-		MIXATION(left);
-		MIXATION(left);
+		lp[0] += *sp++ * amp;
+		lp += 2;
 	}
 }
 
-static void mix_single(sample_t *sp,  int32_t *lp, int v, int count)
+static void mix_single_left(const sample_t *sp, float *lp, Voice *v, int count)
 {
-	final_volume_t 
-		left=voice[v].left_mix;
-	sample_t s;
-
-	while (count--)
-	{
-		s = *sp++;
-		MIXATION(left);
-		lp++;
-	}
+	mix_single(sp, lp, v->left_mix, count);
+}
+static void mix_single_right(const sample_t *sp, float *lp, Voice *v, int count)
+{
+	mix_single(sp, lp + 1, v->right_mix, count);
 }
 
-static void mix_mono(sample_t *sp,  int32_t *lp, int v, int count)
+static void mix_mono(const sample_t *sp, float *lp, Voice *v, int count)
 {
 	final_volume_t 
-		left=voice[v].left_mix;
-	sample_t s;
+		left = v->left_mix;
 
 	while (count--)
 	{
-		s = *sp++;
-		MIXATION(left);
+		*lp++ += *sp++ * left;
 	}
 }
 
 /* Ramp a note out in c samples */
-static void ramp_out(sample_t *sp,  int32_t *lp, int v,  int32_t c)
+static void ramp_out(const sample_t *sp, float *lp, Voice *v, int c)
 {
+	final_volume_t left, right, li, ri;
 
-	/* should be final_volume_t, but uint8_t gives trouble. */
-	 int32_t left, right, li, ri;
-
-	sample_t s=0; /* silly warning about uninitialized s */
+	sample_t s = 0; /* silly warning about uninitialized s */
 
 	/* Fix by James Caldwell */
 	if ( c == 0 ) c = 1;
 
-	left=voice[v].left_mix;
-	li=-(left/c);
-	if (!li) li=-1;
+	/* printf("Ramping out: left=%d, c=%d, li=%d\n", left, c, li); */
 
-	/* I_Printf("Ramping out: left=%d, c=%d, li=%d\n", left, c, li); */
+	if (v->right_mix == 0)			// All the way to the left
+	{
+		left = v->left_mix;
+		li = -(left/c);
+		if (li == 0) li = -1;
 
-	if (!(play_mode->encoding & PE_MONO))
-	{
-		if (voice[v].panned==PANNED_MYSTERY)
-		{
-			right=voice[v].right_mix;
-			ri=-(right/c);
-			while (c--)
-			{
-				left += li;
-				if (left<0)
-					left=0;
-				right += ri;
-				if (right<0)
-					right=0;
-				s=*sp++;
-				MIXATION(left);
-				MIXATION(right);
-			}
-		}
-		else if (voice[v].panned==PANNED_CENTER)
-		{
-			while (c--)
-			{
-				left += li;
-				if (left<0)
-					return;
-				s=*sp++;	
-				MIXATION(left);
-				MIXATION(left);
-			}
-		}
-		else if (voice[v].panned==PANNED_LEFT)
-		{
-			while (c--)
-			{
-				left += li;
-				if (left<0)
-					return;
-				s=*sp++;
-				MIXATION(left);
-				lp++;
-			}
-		}
-		else if (voice[v].panned==PANNED_RIGHT)
-		{
-			while (c--)
-			{
-				left += li;
-				if (left<0)
-					return;
-				s=*sp++;
-				lp++;
-				MIXATION(left);
-			}
-		}
-	}
-	else
-	{
-		/* Mono output.  */
 		while (c--)
 		{
 			left += li;
-			if (left<0)
+			if (left < 0)
 				return;
-			s=*sp++;
-			MIXATION(left);
+			lp[0] += *sp++ * left;
+			lp += 2;
+		}
+	}
+	else if (v->left_mix == 0)		// All the way to the right
+	{
+		right = v->right_mix;
+		ri = -(right/c);
+		if (ri == 0) ri = -1;
+
+		while (c--)
+		{
+			right += ri;
+			if (right < 0)
+				return;
+			s = *sp++;
+			lp[1] += *sp++ * right;
+			lp += 2;
+		}
+	}
+	else							// Somewhere in the middle
+	{
+		left = v->left_mix;
+		li = -(left/c);
+		if (li == 0) li = -1;
+		right = v->right_mix;
+		ri = -(right/c);
+		if (ri == 0) ri = -1;
+
+		right = v->right_mix;
+		ri = -(right/c);
+		while (c--)
+		{
+			left += li;
+			right += ri;
+			if (left < 0)
+			{
+				if (right < 0)
+				{
+					return;
+				}
+				left = 0;
+			}
+			else if (right < 0)
+			{
+				right = 0;
+			}
+			s = *sp++;
+			lp[0] += s * left;
+			lp[1] += s * right;
+			lp += 2;
 		}
 	}
 }
@@ -514,56 +694,64 @@ static void ramp_out(sample_t *sp,  int32_t *lp, int v,  int32_t c)
 
 /**************** interface function ******************/
 
-void mix_voice( int32_t *buf, int v,  int32_t c)
+void mix_voice(Renderer *song, float *buf, Voice *v, int c)
 {
-	Voice *vp=voice+v;
+	int count = c;
 	sample_t *sp;
-	if (vp->status==VOICE_DIE)
+	if (c < 0)
 	{
-		if (c>=MAX_DIE_TIME)
-			c=MAX_DIE_TIME;
-		sp=resample_voice(v, &c);
-		ramp_out(sp, buf, v, c);
-		vp->status=VOICE_FREE;
+		return;
+	}
+	if (v->status & VOICE_STOPPING)
+	{
+		if (count >= MAX_DIE_TIME)
+			count = MAX_DIE_TIME;
+		sp = resample_voice(song, v, &count);
+		ramp_out(sp, buf, v, count);
+		v->status = 0;
 	}
 	else
 	{
-		sp=resample_voice(v, &c);
-		if (play_mode->encoding & PE_MONO)
+		sp = resample_voice(song, v, &count);
+		if (count < 0)
 		{
-			/* Mono output. */
-			if (vp->envelope_increment || vp->tremolo_phase_increment)
-				mix_mono_signal(sp, buf, v, c);
-			else
-				mix_mono(sp, buf, v, c);
+			return;
 		}
-		else
+		if (v->right_mix == 0)			// All the way to the left
 		{
-			if (vp->panned == PANNED_MYSTERY)
+			if (v->eg1.env.bUpdating || v->tremolo_phase_increment != 0)
 			{
-				if (vp->envelope_increment || vp->tremolo_phase_increment)
-					mix_mystery_signal(sp, buf, v, c);
-				else
-					mix_mystery(sp, buf, v, c);
-			}
-			else if (vp->panned == PANNED_CENTER)
-			{
-				if (vp->envelope_increment || vp->tremolo_phase_increment)
-					mix_center_signal(sp, buf, v, c);
-				else
-					mix_center(sp, buf, v, c);
+				mix_single_left_signal(song->control_ratio, sp, buf, v, count);
 			}
 			else
-			{ 
-				/* It's either full left or full right. In either case,
-				every other sample is 0. Just get the offset right: */
-				if (vp->panned == PANNED_RIGHT) buf++;
-
-				if (vp->envelope_increment || vp->tremolo_phase_increment)
-					mix_single_signal(sp, buf, v, c);
-				else 
-					mix_single(sp, buf, v, c);
+			{
+				mix_single_left(sp, buf, v, count);
 			}
 		}
+		else if (v->left_mix == 0)		// All the way to the right
+		{
+			if (v->eg1.env.bUpdating || v->tremolo_phase_increment != 0)
+			{
+				mix_single_right_signal(song->control_ratio, sp, buf, v, count);
+			}
+			else
+			{
+				mix_single_right(sp, buf, v, count);
+			}
+		}
+		else							// Somewhere in the middle
+		{
+			if (v->eg1.env.bUpdating || v->tremolo_phase_increment)
+			{
+				mix_mystery_signal(song->control_ratio, sp, buf, v, count);
+			}
+			else
+			{
+				mix_mystery(song->control_ratio, sp, buf, v, count);
+			}
+		}
+		v->sample_count += count;
 	}
+}
+
 }

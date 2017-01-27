@@ -1,660 +1,445 @@
 /*
-===========================================================================
-
-Doom 3 BFG Edition GPL Source Code
-Copyright (C) 1993-2012 id Software LLC, a ZeniMax Media company. 
-
-This file is part of the Doom 3 BFG Edition GPL Source Code ("Doom 3 BFG Edition Source Code").  
-
-Doom 3 BFG Edition Source Code is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-Doom 3 BFG Edition Source Code is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with Doom 3 BFG Edition Source Code.  If not, see <http://www.gnu.org/licenses/>.
-
-In addition, the Doom 3 BFG Edition Source Code is also subject to certain additional terms. You should have received a copy of these additional terms immediately following the terms and conditions of the GNU General Public License which accompanied the Doom 3 BFG Edition Source Code.  If not, please request a copy in writing from id Software at the address below.
-
-If you have questions concerning this license or the applicable additional terms, you may contact in writing id Software LLC, c/o ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
-
-===========================================================================
+** p_switch.cpp
+** Switch and button maintenance and animation
+**
+**---------------------------------------------------------------------------
+** Copyright 1998-2006 Randy Heit
+** All rights reserved.
+**
+** Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions
+** are met:
+**
+** 1. Redistributions of source code must retain the above copyright
+**    notice, this list of conditions and the following disclaimer.
+** 2. Redistributions in binary form must reproduce the above copyright
+**    notice, this list of conditions and the following disclaimer in the
+**    documentation and/or other materials provided with the distribution.
+** 3. The name of the author may not be used to endorse or promote products
+**    derived from this software without specific prior written permission.
+**
+** THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
+** IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+** OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+** IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
+** INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+** NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+** THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+**---------------------------------------------------------------------------
+**
 */
 
-#include "Precompiled.h"
-#include "globaldata.h"
-
-
+#include "templates.h"
 #include "i_system.h"
 #include "doomdef.h"
 #include "p_local.h"
-
+#include "p_lnspec.h"
+#include "p_3dmidtex.h"
+#include "m_random.h"
 #include "g_game.h"
-
 #include "s_sound.h"
-
-// Data.
-#include "sounds.h"
-
-// State.
 #include "doomstat.h"
 #include "r_state.h"
+#include "w_wad.h"
+#include "tarray.h"
+#include "cmdlib.h"
+#include "farchive.h"
 
+#include "gi.h"
 
-//
-// CHANGE THE TEXTURE OF A WALL SWITCH TO ITS OPPOSITE
-//
-const switchlist_t alphSwitchList[] =
+static FRandom pr_switchanim ("AnimSwitch");
+
+class DActiveButton : public DThinker
 {
-    // Doom shareware episode 1 switches
-    {"SW1BRCOM",	"SW2BRCOM",	1},
-    {"SW1BRN1",	"SW2BRN1",	1},
-    {"SW1BRN2",	"SW2BRN2",	1},
-    {"SW1BRNGN",	"SW2BRNGN",	1},
-    {"SW1BROWN",	"SW2BROWN",	1},
-    {"SW1COMM",	"SW2COMM",	1},
-    {"SW1COMP",	"SW2COMP",	1},
-    {"SW1DIRT",	"SW2DIRT",	1},
-    {"SW1EXIT",	"SW2EXIT",	1},
-    {"SW1GRAY",	"SW2GRAY",	1},
-    {"SW1GRAY1",	"SW2GRAY1",	1},
-    {"SW1METAL",	"SW2METAL",	1},
-    {"SW1PIPE",	"SW2PIPE",	1},
-    {"SW1SLAD",	"SW2SLAD",	1},
-    {"SW1STARG",	"SW2STARG",	1},
-    {"SW1STON1",	"SW2STON1",	1},
-    {"SW1STON2",	"SW2STON2",	1},
-    {"SW1STONE",	"SW2STONE",	1},
-    {"SW1STRTN",	"SW2STRTN",	1},
-    
-    // Doom registered episodes 2&3 switches
-    {"SW1BLUE",	"SW2BLUE",	2},
-    {"SW1CMT",		"SW2CMT",	2},
-    {"SW1GARG",	"SW2GARG",	2},
-    {"SW1GSTON",	"SW2GSTON",	2},
-    {"SW1HOT",		"SW2HOT",	2},
-    {"SW1LION",	"SW2LION",	2},
-    {"SW1SATYR",	"SW2SATYR",	2},
-    {"SW1SKIN",	"SW2SKIN",	2},
-    {"SW1VINE",	"SW2VINE",	2},
-    {"SW1WOOD",	"SW2WOOD",	2},
-    
-    // Doom II switches
-    {"SW1PANEL",	"SW2PANEL",	3},
-    {"SW1ROCK",	"SW2ROCK",	3},
-    {"SW1MET2",	"SW2MET2",	3},
-    {"SW1WDMET",	"SW2WDMET",	3},
-    {"SW1BRIK",	"SW2BRIK",	3},
-    {"SW1MOD1",	"SW2MOD1",	3},
-    {"SW1ZIM",		"SW2ZIM",	3},
-    {"SW1STON6",	"SW2STON6",	3},
-    {"SW1TEK",		"SW2TEK",	3},
-    {"SW1MARB",	"SW2MARB",	3},
-    {"SW1SKULL",	"SW2SKULL",	3},
-	
-    {"\0",		"\0",		0}
+	DECLARE_CLASS (DActiveButton, DThinker)
+public:
+	DActiveButton ();
+	DActiveButton (side_t *, int, FSwitchDef *, fixed_t x, fixed_t y, bool flippable);
+
+	void Serialize (FArchive &arc);
+	void Tick ();
+
+	side_t			*m_Side;
+	SBYTE			m_Part;
+	bool			bFlippable;
+	bool			bReturning;
+	FSwitchDef		*m_SwitchDef;
+	SDWORD			m_Frame;
+	DWORD			m_Timer;
+	fixed_t			m_X, m_Y;	// Location of timer sound
+
+protected:
+	bool AdvanceFrame ();
 };
 
 
-//
-// P_InitSwitchList
-// Only called at game initialization.
-//
-void P_InitSwitchList(void)
-{
-    int		i;
-    int		index;
-    int		episode;
-	
-    episode = 1;
-
-	if (::g->gamemode == registered || ::g->gamemode == retail)
-		episode = 2;
-    else if ( ::g->gamemode == commercial )
-	    episode = 3;
-		
-    for (index = 0,i = 0;i < MAXSWITCHES;i++)
-    {
-		if (!alphSwitchList[i].episode)
-		{
-			::g->numswitches = index/2;
-			::g->switchlist[index] = -1;
-			break;
-		}
-		
-		if (alphSwitchList[i].episode <= episode)
-		{
-	#if 0	// UNUSED - debug?
-			int		value;
-				
-			if (R_CheckTextureNumForName(alphSwitchList[i].name1) < 0)
-			{
-			I_Error("Can't find switch texture '%s'!",
-				alphSwitchList[i].name1);
-			continue;
-			}
-		    
-			value = R_TextureNumForName(alphSwitchList[i].name1);
-	#endif
-			::g->switchlist[index++] = R_TextureNumForName(alphSwitchList[i].name1);
-			::g->switchlist[index++] = R_TextureNumForName(alphSwitchList[i].name2);
-		}
-    }
-}
-
-
+//==========================================================================
 //
 // Start a button counting down till it turns off.
+// [RH] Rewritten to remove MAXBUTTONS limit.
 //
-void
-P_StartButton
-( line_t*	line,
-  bwhere_e	w,
-  int		texture,
-  int		time )
-{
-    int		i;
-    
-    // See if button is already pressed
-    for (i = 0;i < MAXBUTTONS;i++)
-    {
-	if (::g->buttonlist[i].btimer
-	    && ::g->buttonlist[i].line == line)
-	{
-	    
-	    return;
-	}
-    }
-    
+//==========================================================================
 
-    
-    for (i = 0;i < MAXBUTTONS;i++)
-    {
-	if (!::g->buttonlist[i].btimer)
+static bool P_StartButton (side_t *side, int Where, FSwitchDef *Switch, fixed_t x, fixed_t y, bool useagain)
+{
+	DActiveButton *button;
+	TThinkerIterator<DActiveButton> iterator;
+	
+	// See if button is already pressed
+	while ( (button = iterator.Next ()) )
 	{
-	    ::g->buttonlist[i].line = line;
-	    ::g->buttonlist[i].where = w;
-	    ::g->buttonlist[i].btexture = texture;
-	    ::g->buttonlist[i].btimer = time;
-	    ::g->buttonlist[i].degensoundorg = &line->frontsector->soundorg;
-	    return;
+		if (button->m_Side == side)
+		{
+			button->m_Timer=1;	// force advancing to the next frame
+			return false;
+		}
 	}
-    }
-    
-    I_Error("P_StartButton: no button slots left!");
+
+	new DActiveButton (side, Where, Switch, x, y, useagain);
+	return true;
 }
 
+//==========================================================================
+//
+// Checks whether a switch is reachable
+// This is optional because old maps can rely on being able to 
+// use non-reachable switches.
+//
+//==========================================================================
+
+bool P_CheckSwitchRange(AActor *user, line_t *line, int sideno)
+{
+	// Activated from an empty side -> always succeed
+	side_t *side = line->sidedef[sideno];
+	if (side == NULL)
+		return true;
+
+	fixed_t checktop;
+	fixed_t checkbot;
+	sector_t *front = side->sector;
+	FLineOpening open;
+	int flags = line->flags;
+
+	if (!side->GetTexture(side_t::mid).isValid())
+	{ // Do not force range checks for 3DMIDTEX lines if there is no actual midtexture.
+		flags &= ~ML_3DMIDTEX;
+	}
+
+	// 3DMIDTEX forces CHECKSWITCHRANGE because otherwise it might cause problems.
+	if (!(flags & (ML_3DMIDTEX|ML_CHECKSWITCHRANGE)))
+		return true;
+
+	// calculate the point where the user would touch the wall.
+	divline_t dll, dlu;
+	fixed_t inter, checkx, checky;
+
+	P_MakeDivline (line, &dll);
+
+	fixedvec3 pos = user->PosRelative(line);
+	dlu.x = pos.x;
+	dlu.y = pos.y;
+	dlu.dx = finecosine[user->angle >> ANGLETOFINESHIFT];
+	dlu.dy = finesine[user->angle >> ANGLETOFINESHIFT];
+	inter = P_InterceptVector(&dll, &dlu);
 
 
+	// Polyobjects must test the containing sector, not the one they originate from.
+	if (line->sidedef[0]->Flags & WALLF_POLYOBJ)
+	{
+		// Get a check point slightly inside the polyobject so that this still works
+		// if the polyobject lies directly on a sector boundary
+		checkx = dll.x + FixedMul(dll.dx, inter + (FRACUNIT/100));
+		checky = dll.y + FixedMul(dll.dy, inter + (FRACUNIT/100));
+		front = P_PointInSector(checkx, checky);
+	}
+	else
+	{
+		checkx = dll.x + FixedMul(dll.dx, inter);
+		checky = dll.y + FixedMul(dll.dy, inter);
+	}
 
 
+	// one sided line or polyobject
+	if (line->sidedef[1] == NULL || (line->sidedef[0]->Flags & WALLF_POLYOBJ))
+	{
+	onesided:
+		fixed_t sectorc = front->ceilingplane.ZatPoint(checkx, checky);
+		fixed_t sectorf = front->floorplane.ZatPoint(checkx, checky);
+		return (user->Top() >= sectorf && user->Z() <= sectorc);
+	}
+
+	// Now get the information from the line.
+	P_LineOpening(open, NULL, line, checkx, checky, pos.x, pos.y);
+	if (open.range <= 0)
+		goto onesided;
+
+	if ((TexMan.FindSwitch(side->GetTexture(side_t::top))) != NULL)
+	{
+
+		// Check 3D floors on back side
+		{
+			sector_t * back = line->sidedef[1 - sideno]->sector;
+			for (unsigned i = 0; i < back->e->XFloor.ffloors.Size(); i++)
+			{
+				F3DFloor *rover = back->e->XFloor.ffloors[i];
+				if (!(rover->flags & FF_EXISTS)) continue;
+				if (!(rover->flags & FF_UPPERTEXTURE)) continue;
+
+				if (user->Z() > rover->top.plane->ZatPoint(checkx, checky) ||
+					user->Top() < rover->bottom.plane->ZatPoint(checkx, checky))
+					continue;
+
+				// This 3D floor depicts a switch texture in front of the player's eyes
+				return true;
+			}
+		}
+
+		return (user->Top() > open.top);
+	}
+	else if ((TexMan.FindSwitch(side->GetTexture(side_t::bottom))) != NULL)
+	{
+		// Check 3D floors on back side
+		{
+			sector_t * back = line->sidedef[1 - sideno]->sector;
+			for (unsigned i = 0; i < back->e->XFloor.ffloors.Size(); i++)
+			{
+				F3DFloor *rover = back->e->XFloor.ffloors[i];
+				if (!(rover->flags & FF_EXISTS)) continue;
+				if (!(rover->flags & FF_LOWERTEXTURE)) continue;
+
+				if (user->Z() > rover->top.plane->ZatPoint(checkx, checky) ||
+					user->Top() < rover->bottom.plane->ZatPoint(checkx, checky))
+					continue;
+
+				// This 3D floor depicts a switch texture in front of the player's eyes
+				return true;
+			}
+		}
+
+		return (user->Z() < open.bottom);
+	}
+	else if ((flags & ML_3DMIDTEX) || (TexMan.FindSwitch(side->GetTexture(side_t::mid))) != NULL)
+	{
+		// 3DMIDTEX lines will force a mid texture check if no switch is found on this line
+		// to keep compatibility with Eternity's implementation.
+		if (!P_GetMidTexturePosition(line, sideno, &checktop, &checkbot))
+			return false;
+		return user->Z() < checktop && user->Top() > checkbot;
+	}
+	else
+	{
+		// no switch found. Check whether the player can touch either top or bottom texture
+		return (user->Top() > open.top) || (user->Z() < open.bottom);
+	}
+}
+
+//==========================================================================
 //
 // Function that changes wall texture.
 // Tell it if switch is ok to use again (1=yes, it's a button).
 //
-void
-P_ChangeSwitchTexture
-( line_t*	line,
-  int 		useAgain )
+//==========================================================================
+
+bool P_ChangeSwitchTexture (side_t *side, int useAgain, BYTE special, bool *quest)
 {
-    int     texTop;
-    int     texMid;
-    int     texBot;
-    int     i;
-    int     sound;
-	
-    if (!useAgain)
-	line->special = 0;
+	int texture;
+	int sound;
+	FSwitchDef *Switch;
 
-    texTop = ::g->sides[line->sidenum[0]].toptexture;
-    texMid = ::g->sides[line->sidenum[0]].midtexture;
-    texBot = ::g->sides[line->sidenum[0]].bottomtexture;
-	
-    sound = sfx_swtchn;
-
-    // EXIT SWITCH?
-    if (line->special == 11)                
-	sound = sfx_swtchx;
-	
-    for (i = 0;i < ::g->numswitches*2;i++)
-    {
-	if (::g->switchlist[i] == texTop)
+	if ((Switch = TexMan.FindSwitch (side->GetTexture(side_t::top))) != NULL)
 	{
-	    S_StartSound(::g->buttonlist->soundorg,sound);
-	    ::g->sides[line->sidenum[0]].toptexture = ::g->switchlist[i^1];
-
-	    if (useAgain)
-		P_StartButton(line,top,::g->switchlist[i],BUTTONTIME);
-
-	    return;
+		texture = side_t::top;
+	}
+	else if ((Switch = TexMan.FindSwitch (side->GetTexture(side_t::bottom))) != NULL)
+	{
+		texture = side_t::bottom;
+	}
+	else if ((Switch = TexMan.FindSwitch (side->GetTexture(side_t::mid))) != NULL)
+	{
+		texture = side_t::mid;
 	}
 	else
 	{
-	    if (::g->switchlist[i] == texMid)
-	    {
-		S_StartSound(::g->buttonlist->soundorg,sound);
-		::g->sides[line->sidenum[0]].midtexture = ::g->switchlist[i^1];
-
-		if (useAgain)
-		    P_StartButton(line, middle,::g->switchlist[i],BUTTONTIME);
-
-		return;
-	    }
-	    else
-	    {
-		if (::g->switchlist[i] == texBot)
+		if (quest != NULL)
 		{
-		    S_StartSound(::g->buttonlist->soundorg,sound);
-		    ::g->sides[line->sidenum[0]].bottomtexture = ::g->switchlist[i^1];
-
-		    if (useAgain)
-			P_StartButton(line, bottom,::g->switchlist[i],BUTTONTIME);
-
-		    return;
+			*quest = false;
 		}
-	    }
+		return false;
 	}
-    }
+
+	// EXIT SWITCH?
+	if (Switch->Sound != 0)
+	{
+		sound = Switch->Sound;
+	}
+	else
+	{
+		sound = S_FindSound (
+			special == Exit_Normal ||
+			special == Exit_Secret ||
+			special == Teleport_NewMap ||
+			special == Teleport_EndGame
+		   ? "switches/exitbutn" : "switches/normbutn");
+	}
+
+	// [RH] The original code played the sound at buttonlist->soundorg,
+	//		which wasn't necessarily anywhere near the switch if it was
+	//		facing a big sector (and which wasn't necessarily for the
+	//		button just activated, either).
+	fixed_t pt[2];
+	line_t *line = side->linedef;
+	bool playsound;
+
+	pt[0] = line->v1->x + (line->dx >> 1);
+	pt[1] = line->v1->y + (line->dy >> 1);
+	side->SetTexture(texture, Switch->frames[0].Texture);
+	if (useAgain || Switch->NumFrames > 1)
+	{
+		playsound = P_StartButton (side, texture, Switch, pt[0], pt[1], !!useAgain);
+	}
+	else 
+	{
+		playsound = true;
+	}
+	if (playsound)
+	{
+		S_Sound (pt[0], pt[1], 0, CHAN_VOICE|CHAN_LISTENERZ, sound, 1, ATTN_STATIC);
+	}
+	if (quest != NULL)
+	{
+		*quest = Switch->QuestPanel;
+	}
+	return true;
 }
 
-
-
-
-
-
+//==========================================================================
 //
-// P_UseSpecialLine
-// Called when a thing uses a special line.
-// Only the front ::g->sides of ::g->lines are usable.
+// Button thinker
 //
-qboolean
-P_UseSpecialLine
-( mobj_t*	thing,
-  line_t*	line,
-  int		side )
-{               
+//==========================================================================
 
-    // Err...
-    // Use the back ::g->sides of VERY SPECIAL ::g->lines...
-    if (side)
-    {
-	switch(line->special)
-	{
-	  case 124:
-	    // Sliding door open&close
-	    // UNUSED?
-	    break;
+IMPLEMENT_CLASS (DActiveButton)
 
-	  default:
-	    return false;
-	    break;
-	}
-    }
-
-    
-    // Switches that other things can activate.
-    if (!thing->player)
-    {
-	// never open secret doors
-	if (line->flags & ML_SECRET)
-	    return false;
-	
-	switch(line->special)
-	{
-	  case 1: 	// MANUAL DOOR RAISE
-	  case 32:	// MANUAL BLUE
-	  case 33:	// MANUAL RED
-	  case 34:	// MANUAL YELLOW
-	    break;
-	    
-	  default:
-	    return false;
-	    break;
-	}
-    }
-
-    
-    // do something  
-    switch (line->special)
-    {
-	// MANUALS
-      case 1:		// Vertical Door
-      case 26:		// Blue Door/Locked
-      case 27:		// Yellow Door /Locked
-      case 28:		// Red Door /Locked
-
-      case 31:		// Manual door open
-      case 32:		// Blue locked door open
-      case 33:		// Red locked door open
-      case 34:		// Yellow locked door open
-
-      case 117:		// Blazing door raise
-      case 118:		// Blazing door open
-	EV_VerticalDoor (line, thing);
-	break;
-	
-	//UNUSED - Door Slide Open&Close
-	// case 124:
-	// EV_SlidingDoor (line, thing);
-	// break;
-
-	// SWITCHES
-      case 7:
-	// Build Stairs
-	if (EV_BuildStairs(line,build8))
-	    P_ChangeSwitchTexture(line,0);
-	break;
-
-      case 9:
-	// Change Donut
-	if (EV_DoDonut(line))
-	    P_ChangeSwitchTexture(line,0);
-	break;
-	
-      case 11:
-	// Exit level
-	// DHM - Nerve :: Not in deathmatch, stay in level until timelimit or fraglimit
-	if ( !::g->deathmatch && ::g->gameaction != ga_completed ) {
-		P_ChangeSwitchTexture(line,0);
-		G_ExitLevel ();
-	}
-	break;
-	
-      case 14:
-	// Raise Floor 32 and change texture
-	if (EV_DoPlat(line,raiseAndChange,32))
-	    P_ChangeSwitchTexture(line,0);
-	break;
-	
-      case 15:
-	// Raise Floor 24 and change texture
-	if (EV_DoPlat(line,raiseAndChange,24))
-	    P_ChangeSwitchTexture(line,0);
-	break;
-	
-      case 18:
-	// Raise Floor to next highest floor
-	if (EV_DoFloor(line, raiseFloorToNearest))
-	    P_ChangeSwitchTexture(line,0);
-	break;
-	
-      case 20:
-	// Raise Plat next highest floor and change texture
-	if (EV_DoPlat(line,raiseToNearestAndChange,0))
-	    P_ChangeSwitchTexture(line,0);
-	break;
-	
-      case 21:
-	// PlatDownWaitUpStay
-	if (EV_DoPlat(line,downWaitUpStay,0))
-	    P_ChangeSwitchTexture(line,0);
-	break;
-	
-      case 23:
-	// Lower Floor to Lowest
-	if (EV_DoFloor(line,lowerFloorToLowest))
-	    P_ChangeSwitchTexture(line,0);
-	break;
-	
-      case 29:
-	// Raise Door
-	if (EV_DoDoor(line,normal))
-	    P_ChangeSwitchTexture(line,0);
-	break;
-	
-      case 41:
-	// Lower Ceiling to Floor
-	if (EV_DoCeiling(line,lowerToFloor))
-	    P_ChangeSwitchTexture(line,0);
-	break;
-	
-      case 71:
-	// Turbo Lower Floor
-	if (EV_DoFloor(line,turboLower))
-	    P_ChangeSwitchTexture(line,0);
-	break;
-	
-      case 49:
-	// Ceiling Crush And Raise
-	if (EV_DoCeiling(line,crushAndRaise))
-	    P_ChangeSwitchTexture(line,0);
-	break;
-	
-      case 50:
-	// Close Door
-	if (EV_DoDoor(line,closed))
-	    P_ChangeSwitchTexture(line,0);
-	break;
-	
-      case 51:
-	// Secret EXIT
-	if ( !::g->deathmatch && ::g->gameaction != ga_completed ) {
-		P_ChangeSwitchTexture(line,0);
-		G_SecretExitLevel ();
-	}
-	break;
-	
-      case 55:
-	// Raise Floor Crush
-	if (EV_DoFloor(line,raiseFloorCrush))
-	    P_ChangeSwitchTexture(line,0);
-	break;
-	
-      case 101:
-	// Raise Floor
-	if (EV_DoFloor(line,raiseFloor))
-	    P_ChangeSwitchTexture(line,0);
-	break;
-	
-      case 102:
-	// Lower Floor to Surrounding floor height
-	if (EV_DoFloor(line,lowerFloor))
-	    P_ChangeSwitchTexture(line,0);
-	break;
-	
-      case 103:
-	// Open Door
-	if (EV_DoDoor(line,opened))
-	    P_ChangeSwitchTexture(line,0);
-	break;
-	
-      case 111:
-	// Blazing Door Raise (faster than TURBO!)
-	if (EV_DoDoor (line,blazeRaise))
-	    P_ChangeSwitchTexture(line,0);
-	break;
-	
-      case 112:
-	// Blazing Door Open (faster than TURBO!)
-	if (EV_DoDoor (line,blazeOpen))
-	    P_ChangeSwitchTexture(line,0);
-	break;
-	
-      case 113:
-	// Blazing Door Close (faster than TURBO!)
-	if (EV_DoDoor (line,blazeClose))
-	    P_ChangeSwitchTexture(line,0);
-	break;
-	
-      case 122:
-	// Blazing PlatDownWaitUpStay
-	if (EV_DoPlat(line,blazeDWUS,0))
-	    P_ChangeSwitchTexture(line,0);
-	break;
-	
-      case 127:
-	// Build Stairs Turbo 16
-	if (EV_BuildStairs(line,turbo16))
-	    P_ChangeSwitchTexture(line,0);
-	break;
-	
-      case 131:
-	// Raise Floor Turbo
-	if (EV_DoFloor(line,raiseFloorTurbo))
-	    P_ChangeSwitchTexture(line,0);
-	break;
-	
-      case 133:
-	// BlzOpenDoor BLUE
-      case 135:
-	// BlzOpenDoor RED
-      case 137:
-	// BlzOpenDoor YELLOW
-	if (EV_DoLockedDoor (line,blazeOpen,thing))
-	    P_ChangeSwitchTexture(line,0);
-	break;
-	
-      case 140:
-	// Raise Floor 512
-	if (EV_DoFloor(line,raiseFloor512))
-	    P_ChangeSwitchTexture(line,0);
-	break;
-	
-	// BUTTONS
-      case 42:
-	// Close Door
-	if (EV_DoDoor(line,closed))
-	    P_ChangeSwitchTexture(line,1);
-	break;
-	
-      case 43:
-	// Lower Ceiling to Floor
-	if (EV_DoCeiling(line,lowerToFloor))
-	    P_ChangeSwitchTexture(line,1);
-	break;
-	
-      case 45:
-	// Lower Floor to Surrounding floor height
-	if (EV_DoFloor(line,lowerFloor))
-	    P_ChangeSwitchTexture(line,1);
-	break;
-	
-      case 60:
-	// Lower Floor to Lowest
-	if (EV_DoFloor(line,lowerFloorToLowest))
-	    P_ChangeSwitchTexture(line,1);
-	break;
-	
-      case 61:
-	// Open Door
-	if (EV_DoDoor(line,opened))
-	    P_ChangeSwitchTexture(line,1);
-	break;
-	
-      case 62:
-	// PlatDownWaitUpStay
-	if (EV_DoPlat(line,downWaitUpStay,1))
-	    P_ChangeSwitchTexture(line,1);
-	break;
-	
-      case 63:
-	// Raise Door
-	if (EV_DoDoor(line,normal))
-	    P_ChangeSwitchTexture(line,1);
-	break;
-	
-      case 64:
-	// Raise Floor to ceiling
-	if (EV_DoFloor(line,raiseFloor))
-	    P_ChangeSwitchTexture(line,1);
-	break;
-	
-      case 66:
-	// Raise Floor 24 and change texture
-	if (EV_DoPlat(line,raiseAndChange,24))
-	    P_ChangeSwitchTexture(line,1);
-	break;
-	
-      case 67:
-	// Raise Floor 32 and change texture
-	if (EV_DoPlat(line,raiseAndChange,32))
-	    P_ChangeSwitchTexture(line,1);
-	break;
-	
-      case 65:
-	// Raise Floor Crush
-	if (EV_DoFloor(line,raiseFloorCrush))
-	    P_ChangeSwitchTexture(line,1);
-	break;
-	
-      case 68:
-	// Raise Plat to next highest floor and change texture
-	if (EV_DoPlat(line,raiseToNearestAndChange,0))
-	    P_ChangeSwitchTexture(line,1);
-	break;
-	
-      case 69:
-	// Raise Floor to next highest floor
-	if (EV_DoFloor(line, raiseFloorToNearest))
-	    P_ChangeSwitchTexture(line,1);
-	break;
-	
-      case 70:
-	// Turbo Lower Floor
-	if (EV_DoFloor(line,turboLower))
-	    P_ChangeSwitchTexture(line,1);
-	break;
-	
-      case 114:
-	// Blazing Door Raise (faster than TURBO!)
-	if (EV_DoDoor (line,blazeRaise))
-	    P_ChangeSwitchTexture(line,1);
-	break;
-	
-      case 115:
-	// Blazing Door Open (faster than TURBO!)
-	if (EV_DoDoor (line,blazeOpen))
-	    P_ChangeSwitchTexture(line,1);
-	break;
-	
-      case 116:
-	// Blazing Door Close (faster than TURBO!)
-	if (EV_DoDoor (line,blazeClose))
-	    P_ChangeSwitchTexture(line,1);
-	break;
-	
-      case 123:
-	// Blazing PlatDownWaitUpStay
-	if (EV_DoPlat(line,blazeDWUS,0))
-	    P_ChangeSwitchTexture(line,1);
-	break;
-	
-      case 132:
-	// Raise Floor Turbo
-	if (EV_DoFloor(line,raiseFloorTurbo))
-	    P_ChangeSwitchTexture(line,1);
-	break;
-	
-      case 99:
-	// BlzOpenDoor BLUE
-      case 134:
-	// BlzOpenDoor RED
-      case 136:
-	// BlzOpenDoor YELLOW
-	if (EV_DoLockedDoor (line,blazeOpen,thing))
-	    P_ChangeSwitchTexture(line,1);
-	break;
-	
-      case 138:
-	// Light Turn On
-	EV_LightTurnOn(line,255);
-	P_ChangeSwitchTexture(line,1);
-	break;
-	
-      case 139:
-	// Light Turn Off
-	EV_LightTurnOn(line,35);
-	P_ChangeSwitchTexture(line,1);
-	break;
-			
-    }
-	
-    return true;
+DActiveButton::DActiveButton ()
+{
+	m_Side = NULL;
+	m_Part = -1;
+	m_SwitchDef = 0;
+	m_Timer = 0;
+	m_X = 0;
+	m_Y = 0;
+	bFlippable = false;
+	bReturning = false;
+	m_Frame = 0;
 }
 
+DActiveButton::DActiveButton (side_t *side, int Where, FSwitchDef *Switch,
+							  fixed_t x, fixed_t y, bool useagain)
+{
+	m_Side = side;
+	m_Part = SBYTE(Where);
+	m_X = x;
+	m_Y = y;
+	bFlippable = useagain;
+	bReturning = false;
+
+	m_SwitchDef = Switch;
+	m_Frame = -1;
+	AdvanceFrame ();
+}
+
+//==========================================================================
+//
+//
+//
+//==========================================================================
+
+void DActiveButton::Serialize (FArchive &arc)
+{
+	Super::Serialize (arc);
+	arc << m_Side << m_Part << m_SwitchDef << m_Frame << m_Timer << bFlippable << m_X << m_Y << bReturning;
+}
+
+//==========================================================================
+//
+//
+//
+//==========================================================================
+
+void DActiveButton::Tick ()
+{
+	if (m_SwitchDef == NULL)
+	{
+		// We lost our definition due to a bad savegame.
+		Destroy();
+		return;
+	}
+
+	FSwitchDef *def = bReturning? m_SwitchDef->PairDef : m_SwitchDef;
+	if (--m_Timer == 0)
+	{
+		if (m_Frame == def->NumFrames - 1)
+		{
+			bReturning = true;
+			def = m_SwitchDef->PairDef;
+			if (def != NULL)
+			{
+				m_Frame = -1;
+				S_Sound (m_X, m_Y, 0, CHAN_VOICE|CHAN_LISTENERZ,
+					def->Sound != 0 ? FSoundID(def->Sound) : FSoundID("switches/normbutn"),
+					1, ATTN_STATIC);
+				bFlippable = false;
+			}
+			else
+			{
+				Destroy ();
+				return;
+			}
+		}
+		bool killme = AdvanceFrame ();
+
+		m_Side->SetTexture(m_Part, def->frames[m_Frame].Texture);
+
+		if (killme)
+		{
+			Destroy ();
+		}
+	}
+}
+
+//==========================================================================
+//
+//
+//
+//==========================================================================
+
+bool DActiveButton::AdvanceFrame ()
+{
+	bool ret = false;
+	FSwitchDef *def = bReturning? m_SwitchDef->PairDef : m_SwitchDef;
+
+	if (++m_Frame == def->NumFrames - 1)
+	{
+		if (bFlippable == true)
+		{
+			m_Timer = BUTTONTIME;
+		}
+		else
+		{
+			ret = true;
+		}
+	}
+	else
+	{
+		m_Timer = def->frames[m_Frame].TimeMin;
+		if (def->frames[m_Frame].TimeRnd != 0)
+		{
+			m_Timer += pr_switchanim(def->frames[m_Frame].TimeRnd);
+		}
+	}
+	return ret;
+}
 

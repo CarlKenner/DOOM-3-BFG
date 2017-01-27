@@ -1,161 +1,150 @@
-/*
-===========================================================================
+// Emacs style mode select	 -*- C++ -*- 
+//-----------------------------------------------------------------------------
+//
+// $Id:$
+//
+// Copyright (C) 1993-1996 by id Software, Inc.
+//
+// This source is available for distribution and/or modification
+// only under the terms of the DOOM Source Code License as
+// published by id Software. All rights reserved.
+//
+// The source is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// FITNESS FOR A PARTICULAR PURPOSE. See the DOOM Source Code License
+// for more details.
+//
+// $Log:$
+//
+// DESCRIPTION:
+//		Mission begin melt/wipe screen special effect.
+//
+//-----------------------------------------------------------------------------
 
-Doom 3 BFG Edition GPL Source Code
-Copyright (C) 1993-2012 id Software LLC, a ZeniMax Media company. 
-
-This file is part of the Doom 3 BFG Edition GPL Source Code ("Doom 3 BFG Edition Source Code").  
-
-Doom 3 BFG Edition Source Code is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-Doom 3 BFG Edition Source Code is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with Doom 3 BFG Edition Source Code.  If not, see <http://www.gnu.org/licenses/>.
-
-In addition, the Doom 3 BFG Edition Source Code is also subject to certain additional terms. You should have received a copy of these additional terms immediately following the terms and conditions of the GNU General Public License which accompanied the Doom 3 BFG Edition Source Code.  If not, please request a copy in writing from id Software at the address below.
-
-If you have questions concerning this license or the applicable additional terms, you may contact in writing id Software LLC, c/o ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
-
-===========================================================================
-*/
-
-#include "Precompiled.h"
-#include "globaldata.h"
-
-#include "z_zone.h"
 #include "i_video.h"
-#include "i_system.h"
 #include "v_video.h"
 #include "m_random.h"
 #include "doomdef.h"
 #include "f_wipe.h"
+#include "c_cvars.h"
+#include "templates.h"
 
 //
-//                       SCREEN WIPE PACKAGE
+//		SCREEN WIPE PACKAGE
 //
 
-// when zero, stop the wipe
+static int CurrentWipeType;
+
+static short *wipe_scr_start;
+static short *wipe_scr_end;
+static int *y;
+
+// [RH] Fire Wipe
+#define FIREWIDTH	64
+#define FIREHEIGHT	64
+static BYTE *burnarray;
+static int density;
+static int burntime;
+
+// [RH] Crossfade
+static int fade;
 
 
-void
-wipe_shittyColMajorXform
-( short*	array,
-  int		width,
-  int		height )
+// Melt -------------------------------------------------------------
+
+// Match the strip sizes that oldschool Doom used on a 320x200 screen.
+#define MELT_WIDTH		160
+#define MELT_HEIGHT		200
+
+void wipe_shittyColMajorXform (short *array)
 {
-    int		x;
-    int		y;
-    short*	dest;
+	int x, y;
+	short *dest;
+	int width = SCREENWIDTH / 2;
 
-    //dest = (short*) DoomLib::Z_Malloc(width*height*2, PU_STATIC, 0 );
-	dest = new short[ width * height ];
+	dest = new short[width*SCREENHEIGHT*2];
 
-    for(y=0;y<height;y++)
-		for(x=0;x<width;x++)
-			dest[x*height+y] = array[y*width+x];
+	for(y = 0; y < SCREENHEIGHT; y++)
+		for(x = 0; x < width; x++)
+			dest[x*SCREENHEIGHT+y] = array[y*width+x];
 
-    memcpy(array, dest, width*height*2);
+	memcpy(array, dest, SCREENWIDTH*SCREENHEIGHT);
 
-    //Z_Free(dest);
 	delete[] dest;
 }
 
-
-int
-wipe_initMelt
-( int	width,
-  int	height,
-  int	ticks )
+bool wipe_initMelt (int ticks)
 {
-    int i, r;
-    
-    // copy start screen to main screen
-    memcpy(::g->wipe_scr, ::g->wipe_scr_start, width*height);
-    
-    // makes this wipe faster (in theory)
-    // to have stuff in column-major format
-    wipe_shittyColMajorXform((short*)::g->wipe_scr_start, width/2, height);
-    wipe_shittyColMajorXform((short*)::g->wipe_scr_end, width/2, height);
-    
-    // setup initial column positions
-    // (::g->wipe_y<0 => not ready to scroll yet)
-    ::g->wipe_y = (int *) DoomLib::Z_Malloc(width*sizeof(int), PU_STATIC, 0);
-
-    ::g->wipe_y[0] = -(M_Random()%16);
-
-	for (i=1;i<width;i++)
+	int i, r;
+	
+	// copy start screen to main screen
+	screen->DrawBlock (0, 0, SCREENWIDTH, SCREENHEIGHT, (BYTE *)wipe_scr_start);
+	
+	// makes this wipe faster (in theory)
+	// to have stuff in column-major format
+	wipe_shittyColMajorXform (wipe_scr_start);
+	wipe_shittyColMajorXform (wipe_scr_end);
+	
+	// setup initial column positions
+	// (y<0 => not ready to scroll yet)
+	y = new int[MELT_WIDTH];
+	y[0] = -(M_Random() & 15);
+	for (i = 1; i < MELT_WIDTH; i++)
 	{
 		r = (M_Random()%3) - 1;
-
-		::g->wipe_y[i] = ::g->wipe_y[i-1] + r;
-
-		if (::g->wipe_y[i] > 0)
-			::g->wipe_y[i] = 0;
-		else if (::g->wipe_y[i] == -16)
-			::g->wipe_y[i] = -15;
+		y[i] = clamp(y[i-1] + r, -15, 0);
 	}
 
-    return 0;
+	return 0;
 }
 
-int wipe_doMelt( int width, int height, int ticks ) {
-	int		i;
-	int		j;
-	int		dy;
-	int		idx;
-
-	short*	s;
-	short*	d;
-	qboolean	done = true;
-
-	width/=2;
+bool wipe_doMelt (int ticks)
+{
+	int i, j, dy, x;
+	const short *s;
+	short *d;
+	bool done = true;
 
 	while (ticks--)
 	{
-		for (i=0;i<width;i++)
+		done = true;
+		for (i = 0; i < MELT_WIDTH; i++)
 		{
-			if (::g->wipe_y[i]<0) {
-
-				::g->wipe_y[i]++;
+			if (y[i] < 0)
+			{
+				y[i]++;
+				done = false;
+			} 
+			else if (y[i] < MELT_HEIGHT)
+			{
+				dy = (y[i] < 16) ? y[i]+1 : 8;
+				y[i] = MIN(y[i] + dy, MELT_HEIGHT);
 				done = false;
 			}
-			else if (::g->wipe_y[i] < height) {
+			if (ticks == 0 && y[i] >= 0)
+			{ // Only draw for the final tick.
+				const int pitch = screen->GetPitch() / 2;
+				int sy = y[i] * SCREENHEIGHT / MELT_HEIGHT;
 
-				dy = (::g->wipe_y[i] < 16 * GLOBAL_IMAGE_SCALER) ? ::g->wipe_y[i]+1 : 8 * GLOBAL_IMAGE_SCALER;
-
-				if (::g->wipe_y[i]+dy >= height)
-					dy = height - ::g->wipe_y[i];
-
-				s = &((short *)::g->wipe_scr_end)[i*height+::g->wipe_y[i]];
-				d = &((short *)::g->wipe_scr)[::g->wipe_y[i]*width+i];
-
-				idx = 0;
-				for (j=dy;j;j--)
+				for (x = i * (SCREENWIDTH/2) / MELT_WIDTH; x < (i + 1) * (SCREENWIDTH/2) / MELT_WIDTH; ++x)
 				{
-					d[idx] = *(s++);
-					idx += width;
+					s = &wipe_scr_end[x*SCREENHEIGHT];
+					d = &((short *)screen->GetBuffer())[x];
+
+					for (j = sy; j != 0; --j)
+					{
+						*d = *(s++);
+						d += pitch;
+					}
+
+					s = &wipe_scr_start[x*SCREENHEIGHT];
+
+					for (j = SCREENHEIGHT - sy; j != 0; --j)
+					{
+						*d = *(s++);
+						d += pitch;
+					}
 				}
-
-				::g->wipe_y[i] += dy;
-
-				s = &((short *)::g->wipe_scr_start)[i*height];
-				d = &((short *)::g->wipe_scr)[::g->wipe_y[i]*width+i];
-
-				idx = 0;
-				for (j=height-::g->wipe_y[i];j;j--)
-				{
-					d[idx] = *(s++);
-					idx += width;
-				}
-
-				done = false;
 			}
 		}
 	}
@@ -163,73 +152,288 @@ int wipe_doMelt( int width, int height, int ticks ) {
 	return done;
 }
 
-int
-wipe_exitMelt
-( int	width,
-  int	height,
-  int	ticks )
+bool wipe_exitMelt (int ticks)
 {
-    Z_Free(::g->wipe_y);
-	::g->wipe_y = NULL;
-    return 0;
+	delete[] y;
+	return 0;
 }
 
-int
-wipe_StartScreen
-( int	x,
-  int	y,
-  int	width,
-  int	height )
+// Burn -------------------------------------------------------------
+
+bool wipe_initBurn (int ticks)
 {
-    ::g->wipe_scr_start = ::g->screens[2];
-    I_ReadScreen(::g->wipe_scr_start);
-    return 0;
+	burnarray = new BYTE[FIREWIDTH * (FIREHEIGHT+5)];
+	memset (burnarray, 0, FIREWIDTH * (FIREHEIGHT+5));
+	density = 4;
+	burntime = 0;
+	return 0;
 }
 
-int
-wipe_EndScreen
-( int	x,
-  int	y,
-  int	width,
-  int	height )
+int wipe_CalcBurn (BYTE *burnarray, int width, int height, int density)
 {
-    ::g->wipe_scr_end = ::g->screens[3];
-    I_ReadScreen(::g->wipe_scr_end);
-    V_DrawBlock(x, y, 0, width, height, ::g->wipe_scr_start); // restore start scr.
-    return 0;
-}
+	// This is a modified version of the fire that was once used
+	// on the player setup menu.
+	static int voop;
 
-int
-wipe_ScreenWipe
-( int	x,
-  int	y,
-  int	width,
-  int	height,
-  int	ticks )
-{
-	int rc;
+	int a, b;
+	BYTE *from;
 
-	// initial stuff
-	if (!::g->go)
+	// generator
+	from = &burnarray[width * height];
+	b = voop;
+	voop += density / 3;
+	for (a = 0; a < density/8; a++)
 	{
-		::g->go = 1;
-		::g->wipe_scr = ::g->screens[0];
-
-		wipe_initMelt(width, height, ticks);
+		unsigned int offs = (a+b) & (width - 1);
+		unsigned int v = M_Random();
+		v = MIN(from[offs] + 4 + (v & 15) + (v >> 3) + (M_Random() & 31), 255u);
+		from[offs] = from[width*2 + ((offs + width*3/2) & (width - 1))] = v;
 	}
+
+	density = MIN(density + 10, width * 7);
+
+	from = burnarray;
+	for (b = 0; b <= height; b += 2)
+	{
+		BYTE *pixel = from;
+
+		// special case: first pixel on line
+		BYTE *p = pixel + (width << 1);
+		unsigned int top = *p + *(p + width - 1) + *(p + 1);
+		unsigned int bottom = *(pixel + (width << 2));
+		unsigned int c1 = (top + bottom) >> 2;
+		if (c1 > 1) c1--;
+		*pixel = c1;
+		*(pixel + width) = (c1 + bottom) >> 1;
+		pixel++;
+
+		// main line loop
+		for (a = 1; a < width-1; a++)
+		{
+			// sum top pixels
+			p = pixel + (width << 1);
+			top = *p + *(p - 1) + *(p + 1);
+
+			// bottom pixel
+			bottom = *(pixel + (width << 2));
+
+			// combine pixels
+			c1 = (top + bottom) >> 2;
+			if (c1 > 1) c1--;
+
+			// store pixels
+			*pixel = c1;
+			*(pixel + width) = (c1 + bottom) >> 1;		// interpolate
+
+			// next pixel
+			pixel++;
+		}
+
+		// special case: last pixel on line
+		p = pixel + (width << 1);
+		top = *p + *(p - 1) + *(p - width + 1);
+		bottom = *(pixel + (width << 2));
+		c1 = (top + bottom) >> 2;
+		if (c1 > 1) c1--;
+		*pixel = c1;
+		*(pixel + width) = (c1 + bottom) >> 1;
+
+		// next line
+		from += width << 1;
+	}
+
+	// Check for done-ness. (Every pixel with level 126 or higher counts as done.)
+	for (a = width * height, from = burnarray; a != 0; --a, ++from)
+	{
+		if (*from < 126)
+		{
+			return density;
+		}
+	}
+	return -1;
+}
+
+bool wipe_doBurn (int ticks)
+{
+	bool done;
+
+	burntime += ticks;
+	ticks *= 2;
+
+	// Make the fire burn
+	done = false;
+	while (!done && ticks--)
+	{
+		density = wipe_CalcBurn(burnarray, FIREWIDTH, FIREHEIGHT, density);
+		done = (density < 0);
+	}
+
+	// Draw the screen
+	fixed_t xstep, ystep, firex, firey;
+	int x, y;
+	BYTE *to, *fromold, *fromnew;
+
+	xstep = (FIREWIDTH * FRACUNIT) / SCREENWIDTH;
+	ystep = (FIREHEIGHT * FRACUNIT) / SCREENHEIGHT;
+	to = screen->GetBuffer();
+	fromold = (BYTE *)wipe_scr_start;
+	fromnew = (BYTE *)wipe_scr_end;
+
+	for (y = 0, firey = 0; y < SCREENHEIGHT; y++, firey += ystep)
+	{
+		for (x = 0, firex = 0; x < SCREENWIDTH; x++, firex += xstep)
+		{
+			int fglevel;
+
+			fglevel = burnarray[(firex>>FRACBITS)+(firey>>FRACBITS)*FIREWIDTH] / 2;
+			if (fglevel >= 63)
+			{
+				to[x] = fromnew[x];
+			}
+			else if (fglevel == 0)
+			{
+				to[x] = fromold[x];
+				done = false;
+			}
+			else
+			{
+				int bglevel = 64-fglevel;
+				DWORD *fg2rgb = Col2RGB8[fglevel];
+				DWORD *bg2rgb = Col2RGB8[bglevel];
+				DWORD fg = fg2rgb[fromnew[x]];
+				DWORD bg = bg2rgb[fromold[x]];
+				fg = (fg+bg) | 0x1f07c1f;
+				to[x] = RGB32k.All[fg & (fg>>15)];
+				done = false;
+			}
+		}
+		fromold += SCREENWIDTH;
+		fromnew += SCREENWIDTH;
+		to += SCREENPITCH;
+	}
+
+	return done || (burntime > 40);
+}
+
+bool wipe_exitBurn (int ticks)
+{
+	delete[] burnarray;
+	return 0;
+}
+
+// Crossfade --------------------------------------------------------
+
+bool wipe_initFade (int ticks)
+{
+	fade = 0;
+	return 0;
+}
+
+bool wipe_doFade (int ticks)
+{
+	fade += ticks * 2;
+	if (fade > 64)
+	{
+		screen->DrawBlock (0, 0, SCREENWIDTH, SCREENHEIGHT, (BYTE *)wipe_scr_end);
+		return true;
+	}
+	else
+	{
+		int x, y;
+		fixed_t bglevel = 64 - fade;
+		DWORD *fg2rgb = Col2RGB8[fade];
+		DWORD *bg2rgb = Col2RGB8[bglevel];
+		BYTE *fromnew = (BYTE *)wipe_scr_end;
+		BYTE *fromold = (BYTE *)wipe_scr_start;
+		BYTE *to = screen->GetBuffer();
+
+		for (y = 0; y < SCREENHEIGHT; y++)
+		{
+			for (x = 0; x < SCREENWIDTH; x++)
+			{
+				DWORD fg = fg2rgb[fromnew[x]];
+				DWORD bg = bg2rgb[fromold[x]];
+				fg = (fg+bg) | 0x1f07c1f;
+				to[x] = RGB32k.All[fg & (fg>>15)];
+			}
+			fromnew += SCREENWIDTH;
+			fromold += SCREENWIDTH;
+			to += SCREENPITCH;
+		}
+	}
+	return false;
+}
+
+bool wipe_exitFade (int ticks)
+{
+	return 0;
+}
+
+// General Wipe Functions -------------------------------------------
+
+static bool (*wipes[])(int) =
+{
+	wipe_initMelt, wipe_doMelt, wipe_exitMelt,
+	wipe_initBurn, wipe_doBurn, wipe_exitBurn,
+	wipe_initFade, wipe_doFade, wipe_exitFade
+};
+
+// Returns true if the wipe should be performed.
+bool wipe_StartScreen (int type)
+{
+	CurrentWipeType = clamp(type, 0, wipe_NUMWIPES - 1);
+
+	if (CurrentWipeType)
+	{
+		wipe_scr_start = new short[SCREENWIDTH * SCREENHEIGHT / 2];
+		screen->GetBlock (0, 0, SCREENWIDTH, SCREENHEIGHT, (BYTE *)wipe_scr_start);
+		return true;
+	}
+	return false;
+}
+
+void wipe_EndScreen (void)
+{
+	if (CurrentWipeType)
+	{
+		wipe_scr_end = new short[SCREENWIDTH * SCREENHEIGHT / 2];
+		screen->GetBlock (0, 0, SCREENWIDTH, SCREENHEIGHT, (BYTE *)wipe_scr_end);
+		screen->DrawBlock (0, 0, SCREENWIDTH, SCREENHEIGHT, (BYTE *)wipe_scr_start); // restore start scr.
+		// Initialize the wipe
+		(*wipes[(CurrentWipeType-1)*3])(0);
+	}
+}
+
+// Returns true if the wipe is done.
+bool wipe_ScreenWipe (int ticks)
+{
+	bool rc;
+
+	if (CurrentWipeType == wipe_None)
+		return true;
 
 	// do a piece of wipe-in
-	V_MarkRect(0, 0, width, height);
+	V_MarkRect(0, 0, SCREENWIDTH, SCREENHEIGHT);
+	rc = (*wipes[(CurrentWipeType-1)*3+1])(ticks);
 
-	rc = wipe_doMelt(width, height, ticks);
-
-	// final stuff
-	if (rc)
-	{
-		::g->go = 0;
-		wipe_exitMelt(width, height, ticks);
-	}
-
-	return !::g->go;
+	return rc;
 }
 
+// Final things for the wipe
+void wipe_Cleanup()
+{
+	if (wipe_scr_start != NULL)
+	{
+		delete[] wipe_scr_start;
+		wipe_scr_start = NULL;
+	}
+	if (wipe_scr_end != NULL)
+	{
+		delete[] wipe_scr_end;
+		wipe_scr_end = NULL;
+	}
+	if (CurrentWipeType > 0)
+	{
+		(*wipes[(CurrentWipeType-1)*3+2])(0);
+	}
+}

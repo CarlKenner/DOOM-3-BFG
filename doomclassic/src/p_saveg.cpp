@@ -1,1038 +1,737 @@
 /*
-===========================================================================
-
-Doom 3 BFG Edition GPL Source Code
-Copyright (C) 1993-2012 id Software LLC, a ZeniMax Media company. 
-
-This file is part of the Doom 3 BFG Edition GPL Source Code ("Doom 3 BFG Edition Source Code").  
-
-Doom 3 BFG Edition Source Code is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-Doom 3 BFG Edition Source Code is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with Doom 3 BFG Edition Source Code.  If not, see <http://www.gnu.org/licenses/>.
-
-In addition, the Doom 3 BFG Edition Source Code is also subject to certain additional terms. You should have received a copy of these additional terms immediately following the terms and conditions of the GNU General Public License which accompanied the Doom 3 BFG Edition Source Code.  If not, please request a copy in writing from id Software at the address below.
-
-If you have questions concerning this license or the applicable additional terms, you may contact in writing id Software LLC, c/o ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
-
-===========================================================================
+** p_saveg.cpp
+** Code for serializing the world state in an archive
+**
+**---------------------------------------------------------------------------
+** Copyright 1998-2006 Randy Heit
+** All rights reserved.
+**
+** Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions
+** are met:
+**
+** 1. Redistributions of source code must retain the above copyright
+**    notice, this list of conditions and the following disclaimer.
+** 2. Redistributions in binary form must reproduce the above copyright
+**    notice, this list of conditions and the following disclaimer in the
+**    documentation and/or other materials provided with the distribution.
+** 3. The name of the author may not be used to endorse or promote products
+**    derived from this software without specific prior written permission.
+**
+** THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
+** IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+** OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+** IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
+** INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+** NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+** THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+**---------------------------------------------------------------------------
+**
 */
 
-#include "Precompiled.h"
-#include "globaldata.h"
-
 #include "i_system.h"
-#include "z_zone.h"
 #include "p_local.h"
 
 // State.
+#include "dobject.h"
 #include "doomstat.h"
 #include "r_state.h"
+#include "m_random.h"
+#include "p_saveg.h"
+#include "s_sndseq.h"
+#include "v_palette.h"
+#include "a_sharedglobal.h"
+#include "r_data/r_interpolate.h"
+#include "g_level.h"
+#include "po_man.h"
+#include "p_setup.h"
+#include "r_data/colormaps.h"
+#include "farchive.h"
+#include "p_lnspec.h"
+#include "p_acs.h"
+#include "p_terrain.h"
 
+static void CopyPlayer (player_t *dst, player_t *src, const char *name);
+static void ReadOnePlayer (FArchive &arc, bool skipload);
+static void ReadMultiplePlayers (FArchive &arc, int numPlayers, int numPlayersNow, bool skipload);
+static void SpawnExtraPlayers ();
 
-
-// Pads ::g->save_p to a 4-byte boundary
-//  so that the load/save works on SGI&Gecko.
-
-
+inline FArchive &operator<< (FArchive &arc, FLinkedSector &link)
+{
+	arc << link.Sector << link.Type;
+	return arc;
+}
 
 //
 // P_ArchivePlayers
 //
-void P_ArchivePlayers (void)
+void P_SerializePlayers (FArchive &arc, bool skipload)
 {
-    int		i;
-    int		j;
-    player_t*	dest;
-		
-    for (i=0 ; i<MAXPLAYERS ; i++)
-    {
-	if (!::g->playeringame[i])
-	    continue;
-	
-	PADSAVEP();
+	BYTE numPlayers, numPlayersNow;
+	int i;
 
-	dest = (player_t *)::g->save_p;
-	memcpy (dest,&::g->players[i],sizeof(player_t));
-	::g->save_p += sizeof(player_t);
-	for (j=0 ; j<NUMPSPRITES ; j++)
+	// Count the number of players present right now.
+	for (numPlayersNow = 0, i = 0; i < MAXPLAYERS; ++i)
 	{
-	    if (dest->psprites[j].state)
-	    {
-		dest->psprites[j].state 
-			= (state_t *)(dest->psprites[j].state-::g->states);
-	    }
+		if (playeringame[i])
+		{
+			++numPlayersNow;
+		}
 	}
-    }
+
+	if (arc.IsStoring())
+	{
+		// Record the number of players in this save.
+		arc << numPlayersNow;
+
+		// Record each player's name, followed by their data.
+		for (i = 0; i < MAXPLAYERS; ++i)
+		{
+			if (playeringame[i])
+			{
+				arc.WriteString (players[i].userinfo.GetName());
+				players[i].Serialize (arc);
+			}
+		}
+	}
+	else
+	{
+		arc << numPlayers;
+
+		// If there is only one player in the game, they go to the
+		// first player present, no matter what their name.
+		if (numPlayers == 1)
+		{
+			ReadOnePlayer (arc, skipload);
+		}
+		else
+		{
+			ReadMultiplePlayers (arc, numPlayers, numPlayersNow, skipload);
+		}
+		if (!skipload && numPlayersNow > numPlayers)
+		{
+			SpawnExtraPlayers ();
+		}
+		// Redo pitch limits, since the spawned player has them at 0.
+		players[consoleplayer].SendPitchLimits();
+	}
 }
 
-
-
-//
-// P_UnArchivePlayers
-//
-void P_UnArchivePlayers (void)
+static void ReadOnePlayer (FArchive &arc, bool skipload)
 {
-    int		i;
-    int		j;
-	
-    for (i=0 ; i<MAXPLAYERS ; i++)
-    {
-	if (!::g->playeringame[i])
-	    continue;
-	
-	PADSAVEP();
+	int i;
+	char *name = NULL;
+	bool didIt = false;
 
-	memcpy (&::g->players[i],::g->save_p, sizeof(player_t));
-	::g->save_p += sizeof(player_t);
-	
-	// will be set when unarc thinker
-	::g->players[i].mo = NULL;	
-	::g->players[i].message = NULL;
-	::g->players[i].attacker = NULL;
+	arc << name;
 
-	for (j=0 ; j<NUMPSPRITES ; j++)
+	for (i = 0; i < MAXPLAYERS; ++i)
 	{
-	    if (::g->players[i]. psprites[j].state)
-	    {
-		::g->players[i]. psprites[j].state 
-		    = &::g->states[ (intptr_t)::g->players[i].psprites[j].state ];
-	    }
+		if (playeringame[i])
+		{
+			if (!didIt)
+			{
+				didIt = true;
+				player_t playerTemp;
+				playerTemp.Serialize (arc);
+				if (!skipload)
+				{
+					CopyPlayer (&players[i], &playerTemp, name);
+				}
+			}
+			else
+			{
+				if (players[i].mo != NULL)
+				{
+					players[i].mo->Destroy();
+					players[i].mo = NULL;
+				}
+			}
+		}
 	}
-    }
+	delete[] name;
 }
 
+static void ReadMultiplePlayers (FArchive &arc, int numPlayers, int numPlayersNow, bool skipload)
+{
+	// For two or more players, read each player into a temporary array.
+	int i, j;
+	char **nametemp = new char *[numPlayers];
+	player_t *playertemp = new player_t[numPlayers];
+	BYTE *tempPlayerUsed = new BYTE[numPlayers];
+	BYTE playerUsed[MAXPLAYERS];
+
+	for (i = 0; i < numPlayers; ++i)
+	{
+		nametemp[i] = NULL;
+		arc << nametemp[i];
+		playertemp[i].Serialize (arc);
+		tempPlayerUsed[i] = 0;
+	}
+	for (i = 0; i < MAXPLAYERS; ++i)
+	{
+		playerUsed[i] = playeringame[i] ? 0 : 2;
+	}
+
+	if (!skipload)
+	{
+		// Now try to match players from the savegame with players present
+		// based on their names. If two players in the savegame have the
+		// same name, then they are assigned to players in the current game
+		// on a first-come, first-served basis.
+		for (i = 0; i < numPlayers; ++i)
+		{
+			for (j = 0; j < MAXPLAYERS; ++j)
+			{
+				if (playerUsed[j] == 0 && stricmp(players[j].userinfo.GetName(), nametemp[i]) == 0)
+				{ // Found a match, so copy our temp player to the real player
+					Printf ("Found player %d (%s) at %d\n", i, nametemp[i], j);
+					CopyPlayer (&players[j], &playertemp[i], nametemp[i]);
+					playerUsed[j] = 1;
+					tempPlayerUsed[i] = 1;
+					break;
+				}
+			}
+		}
+
+		// Any players that didn't have matching names are assigned to existing
+		// players on a first-come, first-served basis.
+		for (i = 0; i < numPlayers; ++i)
+		{
+			if (tempPlayerUsed[i] == 0)
+			{
+				for (j = 0; j < MAXPLAYERS; ++j)
+				{
+					if (playerUsed[j] == 0)
+					{
+						Printf ("Assigned player %d (%s) to %d (%s)\n", i, nametemp[i], j, players[j].userinfo.GetName());
+						CopyPlayer (&players[j], &playertemp[i], nametemp[i]);
+						playerUsed[j] = 1;
+						tempPlayerUsed[i] = 1;
+						break;
+					}
+				}
+			}
+		}
+
+		// Make sure any extra players don't have actors spawned yet. Happens if the players
+		// present now got the same slots as they had in the save, but there are not as many
+		// as there were in the save.
+		for (j = 0; j < MAXPLAYERS; ++j)
+		{
+			if (playerUsed[j] == 0)
+			{
+				if (players[j].mo != NULL)
+				{
+					players[j].mo->Destroy();
+					players[j].mo = NULL;
+				}
+			}
+		}
+
+		// Remove any temp players that were not used. Happens if there are fewer players
+		// than there were in the save, and they got shuffled.
+		for (i = 0; i < numPlayers; ++i)
+		{
+			if (tempPlayerUsed[i] == 0)
+			{
+				playertemp[i].mo->Destroy();
+				playertemp[i].mo = NULL;
+			}
+		}
+	}
+
+	delete[] tempPlayerUsed;
+	delete[] playertemp;
+	for (i = 0; i < numPlayers; ++i)
+	{
+		delete[] nametemp[i];
+	}
+	delete[] nametemp;
+}
+
+static void CopyPlayer (player_t *dst, player_t *src, const char *name)
+{
+	// The userinfo needs to be saved for real players, but it
+	// needs to come from the save for bots.
+	userinfo_t uibackup;
+	userinfo_t uibackup2;
+
+	uibackup.TransferFrom(dst->userinfo);
+	uibackup2.TransferFrom(src->userinfo);
+
+	int chasecam = dst->cheats & CF_CHASECAM;	// Remember the chasecam setting
+	bool attackdown = dst->attackdown;
+	bool usedown = dst->usedown;
+
+	
+	*dst = *src;		// To avoid memory leaks at this point the userinfo in src must be empty which is taken care of by the TransferFrom call above.
+
+	dst->cheats |= chasecam;
+
+	if (dst->Bot != NULL)
+	{
+		botinfo_t *thebot = bglobal.botinfo;
+		while (thebot && stricmp (name, thebot->name))
+		{
+			thebot = thebot->next;
+		}
+		if (thebot)
+		{
+			thebot->inuse = BOTINUSE_Yes;
+		}
+		bglobal.botnum++;
+		dst->userinfo.TransferFrom(uibackup2);
+	}
+	else
+	{
+		dst->userinfo.TransferFrom(uibackup);
+	}
+	// Validate the skin
+	dst->userinfo.SkinNumChanged(R_FindSkin(skins[dst->userinfo.GetSkin()].name, dst->CurrentPlayerClass));
+
+	// Make sure the player pawn points to the proper player struct.
+	if (dst->mo != NULL)
+	{
+		dst->mo->player = dst;
+	}
+	// These 2 variables may not be overwritten.
+	dst->attackdown = attackdown;
+	dst->usedown = usedown;
+}
+
+static void SpawnExtraPlayers ()
+{
+	// If there are more players now than there were in the savegame,
+	// be sure to spawn the extra players.
+	int i;
+
+	if (deathmatch)
+	{
+		return;
+	}
+
+	for (i = 0; i < MAXPLAYERS; ++i)
+	{
+		if (playeringame[i] && players[i].mo == NULL)
+		{
+			players[i].playerstate = PST_ENTER;
+			P_SpawnPlayer(&playerstarts[i], i, (level.flags2 & LEVEL2_PRERAISEWEAPON) ? SPF_WEAPONFULLYUP : 0);
+		}
+	}
+}
 
 //
 // P_ArchiveWorld
 //
-void P_ArchiveWorld (void)
+void P_SerializeWorld (FArchive &arc)
 {
-    int			i;
-    int			j;
-    sector_t*		sec;
-    line_t*		li;
-    side_t*		si;
-    short*		put;
-	
-    put = (short *)::g->save_p;
-    
-    // do ::g->sectors
-    for (i=0, sec = ::g->sectors ; i < ::g->numsectors ; i++,sec++)
-    {
-	*put++ = sec->floorheight >> FRACBITS;
-	*put++ = sec->ceilingheight >> FRACBITS;
-	*put++ = sec->floorpic;
-	*put++ = sec->ceilingpic;
-	*put++ = sec->lightlevel;
-	*put++ = sec->special;		// needed?
-	*put++ = sec->tag;		// needed?
-    }
+	int i, j;
+	sector_t *sec;
+	line_t *li;
+	zone_t *zn;
 
-    
-    // do ::g->lines
-    for (i=0, li = ::g->lines ; i < ::g->numlines ; i++,li++)
-    {
-	*put++ = li->flags;
-	*put++ = li->special;
-	*put++ = li->tag;
-	for (j=0 ; j<2 ; j++)
+	// do sectors
+	for (i = 0, sec = sectors; i < numsectors; i++, sec++)
 	{
-	    if (li->sidenum[j] == -1)
-		continue;
-	    
-	    si = &::g->sides[li->sidenum[j]];
+		arc << sec->floorplane
+			<< sec->ceilingplane;
+		if (SaveVersion < 3223)
+		{
+			BYTE bytelight;
+			arc << bytelight;
+			sec->lightlevel = bytelight;
+		}
+		else
+		{
+			arc << sec->lightlevel;
+		}
+		arc << sec->special;
+		if (SaveVersion < 4523)
+		{
+			short tag;
+			arc << tag;
+		}
+		arc << sec->soundtraversed
+			<< sec->seqType
+			<< sec->friction
+			<< sec->movefactor
+			<< sec->floordata
+			<< sec->ceilingdata
+			<< sec->lightingdata
+			<< sec->stairlock
+			<< sec->prevsec
+			<< sec->nextsec
+			<< sec->planes[sector_t::floor]
+			<< sec->planes[sector_t::ceiling]
+			<< sec->heightsec
+			<< sec->bottommap << sec->midmap << sec->topmap
+			<< sec->gravity;
+		if (SaveVersion >= 4530)
+		{
+			P_SerializeTerrain(arc, sec->terrainnum[0]);
+			P_SerializeTerrain(arc, sec->terrainnum[1]);
+		}
+		if (SaveVersion >= 4529)
+		{
+			arc << sec->damageamount;
+		}
+		else
+		{
+			short dmg;
+			arc << dmg;
+			sec->damageamount = dmg;
+		}
+		if (SaveVersion >= 4528)
+		{
+			arc << sec->damageinterval
+				<< sec->leakydamage
+				<< sec->damagetype;
+		}
+		else
+		{
+			short damagemod;
+			arc << damagemod;
+			sec->damagetype = MODtoDamageType(damagemod);
+			if (sec->damageamount < 20)
+			{
+				sec->leakydamage = 0;
+				sec->damageinterval = 32;
+			}
+			else if (sec->damageamount < 50)
+			{
+				sec->leakydamage = 5;
+				sec->damageinterval = 32;
+			}
+			else
+			{
+				sec->leakydamage = 256;
+				sec->damageinterval = 1;
+			}
+		}
 
-	    *put++ = si->textureoffset >> FRACBITS;
-	    *put++ = si->rowoffset >> FRACBITS;
-	    *put++ = si->toptexture;
-	    *put++ = si->bottomtexture;
-	    *put++ = si->midtexture;	
+		arc << sec->SoundTarget
+			<< sec->SecActTarget
+			<< sec->sky
+			<< sec->MoreFlags
+			<< sec->Flags
+			<< sec->SkyBoxes[sector_t::floor] << sec->SkyBoxes[sector_t::ceiling]
+			<< sec->ZoneNumber;
+		if (SaveVersion < 4529)
+		{
+			short secretsector;
+			arc << secretsector;
+			if (secretsector) sec->Flags |= SECF_WASSECRET;
+			P_InitSectorSpecial(sec, sec->special, true);
+		}
+		arc	<< sec->interpolations[0]
+			<< sec->interpolations[1]
+			<< sec->interpolations[2]
+			<< sec->interpolations[3]
+			<< sec->SeqName;
+
+		sec->e->Serialize(arc);
+		if (arc.IsStoring ())
+		{
+			arc << sec->ColorMap->Color
+				<< sec->ColorMap->Fade;
+			BYTE sat = sec->ColorMap->Desaturate;
+			arc << sat;
+		}
+		else
+		{
+			PalEntry color, fade;
+			BYTE desaturate;
+			arc << color << fade
+				<< desaturate;
+			sec->ColorMap = GetSpecialLights (color, fade, desaturate);
+		}
+		// begin of GZDoom additions
+		arc << sec->reflect[sector_t::ceiling] << sec->reflect[sector_t::floor];
+		// end of GZDoom additions
 	}
-    }
 
-	// Doom 2 level 30 requires some global pointers, wheee!
-	*put++ = ::g->braintargeton;
-	*put++ = ::g->easy;
+	// do lines
+	for (i = 0, li = lines; i < numlines; i++, li++)
+	{
+		arc << li->flags
+			<< li->activation
+			<< li->special
+			<< li->Alpha;
 
-    ::g->save_p = (byte *)put;
+		if (SaveVersion < 4523)
+		{
+			int id;
+			arc << id;
+		}
+		if (P_IsACSSpecial(li->special))
+		{
+			P_SerializeACSScriptNumber(arc, li->args[0], false);
+		}
+		else
+		{
+			arc << li->args[0];
+		}
+		arc << li->args[1] << li->args[2] << li->args[3] << li->args[4];
+
+		if (SaveVersion >= 4531)
+		{
+			arc << li->skybox;
+		}
+
+		for (j = 0; j < 2; j++)
+		{
+			if (li->sidedef[j] == NULL)
+				continue;
+
+			side_t *si = li->sidedef[j];
+			arc << si->textures[side_t::top]
+				<< si->textures[side_t::mid]
+				<< si->textures[side_t::bottom]
+				<< si->Light
+				<< si->Flags
+				<< si->LeftSide
+				<< si->RightSide
+				<< si->Index;
+			DBaseDecal::SerializeChain (arc, &si->AttachedDecals);
+		}
+	}
+
+	// do zones
+	arc << numzones;
+
+	if (arc.IsLoading())
+	{
+		if (zones != NULL)
+		{
+			delete[] zones;
+		}
+		zones = new zone_t[numzones];
+	}
+
+	for (i = 0, zn = zones; i < numzones; ++i, ++zn)
+	{
+		arc << zn->Environment;
+	}
 }
 
-
-
-//
-// P_UnArchiveWorld
-//
-void P_UnArchiveWorld (void)
+void extsector_t::Serialize(FArchive &arc)
 {
-    int			i;
-    int			j;
-    sector_t*	sec;
-    line_t*		li;
-    side_t*		si;
-    short*		get;
-	
-    get = (short *)::g->save_p;
-    
-    // do ::g->sectors
-    for (i=0, sec = ::g->sectors ; i < ::g->numsectors ; i++,sec++)
-    {
-	sec->floorheight = *get++ << FRACBITS;
-	sec->ceilingheight = *get++ << FRACBITS;
-	sec->floorpic = *get++;
-	sec->ceilingpic = *get++;
-	sec->lightlevel = *get++;
-	sec->special = *get++;		// needed?
-	sec->tag = *get++;		// needed?
-	sec->specialdata = 0;
-	sec->soundtarget = 0;
-    }
-    
-    // do ::g->lines
-    for (i=0, li = ::g->lines ; i < ::g->numlines ; i++,li++)
-    {
-	li->flags = *get++;
-	li->special = *get++;
-	li->tag = *get++;
-	for (j=0 ; j<2 ; j++)
-	{
-	    if (li->sidenum[j] == -1)
-		continue;
-	    si = &::g->sides[li->sidenum[j]];
-	    si->textureoffset = *get++ << FRACBITS;
-	    si->rowoffset = *get++ << FRACBITS;
-	    si->toptexture = *get++;
-	    si->bottomtexture = *get++;
-	    si->midtexture = *get++;
-	}
-    }
-
-	// Doom 2 level 30 requires some global pointers, wheee!
-	::g->braintargeton = *get++;
-	::g->easy = *get++;
-
-    ::g->save_p = (byte *)get;	
+	arc << FakeFloor.Sectors
+		<< Midtex.Floor.AttachedLines 
+		<< Midtex.Floor.AttachedSectors
+		<< Midtex.Ceiling.AttachedLines
+		<< Midtex.Ceiling.AttachedSectors
+		<< Linked.Floor.Sectors
+		<< Linked.Ceiling.Sectors;
 }
 
+FArchive &operator<< (FArchive &arc, side_t::part &p)
+{
+	arc << p.xoffset << p.yoffset << p.interpolation << p.texture 
+		<< p.xscale << p.yscale;// << p.Light;
+	return arc;
+}
 
-
+FArchive &operator<< (FArchive &arc, sector_t::splane &p)
+{
+	arc << p.xform.xoffs << p.xform.yoffs << p.xform.xscale << p.xform.yscale 
+		<< p.xform.angle << p.xform.base_yoffs << p.xform.base_angle
+		<< p.Flags << p.Light << p.Texture << p.TexZ << p.alpha;
+	return arc;
+}
 
 
 //
 // Thinkers
 //
 
-int GetMOIndex( mobj_t* findme ) {
-	thinker_t*	th;
-	mobj_t*		mobj;
-	int			index = 0;
-
-	for (th = ::g->thinkercap.next ; th != &::g->thinkercap ; th=th->next)
-	{
-		if (th->function.acp1 == (actionf_p1)P_MobjThinker) {
-			index++;
-			mobj = (mobj_t*)th;
-
-			if ( mobj == findme ) {
-				return index;
-			}
-		}
-	}
-
-	return 0;
-}
-
-mobj_t* GetMO( int index ) {
-	thinker_t*	th;
-	int			testindex = 0;
-
-	if ( !index ) {
-		return NULL;
-	}
-
-	for (th = ::g->thinkercap.next ; th != &::g->thinkercap ; th=th->next)
-	{
-		if (th->function.acp1 == (actionf_p1)P_MobjThinker) {
-			testindex++;
-
-			if ( testindex == index ) {
-				return (mobj_t*)th;
-			}
-		}
-	}
-
-	return NULL;
-}
-
 //
 // P_ArchiveThinkers
 //
-void P_ArchiveThinkers (void)
+
+void P_SerializeThinkers (FArchive &arc, bool hubLoad)
 {
-	thinker_t*		th;
-	mobj_t*			mobj;
-	ceiling_t*		ceiling;
-	vldoor_t*		door;
-	floormove_t*	floor;
-	plat_t*			plat;
-	fireflicker_t*	fire;
-	lightflash_t*	flash;
-	strobe_t*		strobe;
-	glow_t*			glow;
-
-	int i;
-	
-	// save off the current thinkers
-	//I_Printf( "Savegame on leveltime %d\n====================\n", ::g->leveltime );
-
-	for (th = ::g->thinkercap.next ; th != &::g->thinkercap ; th=th->next)
-	{
-		//mobj_t*	test = (mobj_t*)th;
-		//I_Printf( "%3d: %x == function\n", index++, th->function.acp1 );
-
-		if (th->function.acp1 == (actionf_p1)P_MobjThinker)
-		{
-			*::g->save_p++ = tc_mobj;
-			PADSAVEP();
-
-			mobj = (mobj_t *)::g->save_p;
-			memcpy (mobj, th, sizeof(*mobj));
-			::g->save_p += sizeof(*mobj);
-			mobj->state = (state_t *)(mobj->state - ::g->states);
-
-			if (mobj->player)
-				mobj->player = (player_t *)((mobj->player-::g->players) + 1);
-
-			// Save out 'target'
-			int moIndex = GetMOIndex( mobj->target );
-			*::g->save_p++ = moIndex >> 8;
-			*::g->save_p++ = moIndex;
-
-			// Save out 'tracer'
-			moIndex = GetMOIndex( mobj->tracer );
-			*::g->save_p++ = moIndex >> 8;
-			*::g->save_p++ = moIndex;
-
-			moIndex = GetMOIndex( mobj->snext );
-			*::g->save_p++ = moIndex >> 8;
-			*::g->save_p++ = moIndex;
-
-			moIndex = GetMOIndex( mobj->sprev );
-			*::g->save_p++ = moIndex >> 8;
-			*::g->save_p++ = moIndex;
-
-			// Is this the head of a sector list?
-			if ( mobj->subsector->sector->thinglist == (mobj_t*)th ) {
-				*::g->save_p++ = 1;
-			}
-			else {
-				*::g->save_p++ = 0;
-			}
-
-			moIndex = GetMOIndex( mobj->bnext );
-			*::g->save_p++ = moIndex >> 8;
-			*::g->save_p++ = moIndex;
-
-			moIndex = GetMOIndex( mobj->bprev );
-			*::g->save_p++ = moIndex >> 8;
-			*::g->save_p++ = moIndex;
-
-			// Is this the head of a block list?
-			int	blockx = (mobj->x - ::g->bmaporgx)>>MAPBLOCKSHIFT;
-			int	blocky = (mobj->y - ::g->bmaporgy)>>MAPBLOCKSHIFT;
-			if ( blockx >= 0 && blockx < ::g->bmapwidth && blocky >= 0 && blocky < ::g->bmapheight 
-				&& (mobj_t*)th == ::g->blocklinks[blocky*::g->bmapwidth+blockx] ) {
-
-					*::g->save_p++ = 1;
-			}
-			else {
-				*::g->save_p++ = 0;
-			}
-			continue;
-		}
-
-		if (th->function.acv == (actionf_v)NULL)
-		{
-			for (i = 0; i < MAXCEILINGS;i++)
-				if (::g->activeceilings[i] == (ceiling_t *)th)
-					break;
-
-			if (i<MAXCEILINGS)
-			{
-				*::g->save_p++ = tc_ceiling;
-				PADSAVEP();
-				ceiling = (ceiling_t *)::g->save_p;
-				memcpy (ceiling, th, sizeof(*ceiling));
-				::g->save_p += sizeof(*ceiling);
-				ceiling->sector = (sector_t *)(ceiling->sector - ::g->sectors);
-			}
-			continue;
-		}
-
-		if (th->function.acp1 == (actionf_p1)T_MoveCeiling)
-		{
-			*::g->save_p++ = tc_ceiling;
-			PADSAVEP();
-			ceiling = (ceiling_t *)::g->save_p;
-			memcpy (ceiling, th, sizeof(*ceiling));
-			::g->save_p += sizeof(*ceiling);
-			ceiling->sector = (sector_t *)(ceiling->sector - ::g->sectors);
-			continue;
-		}
-
-		if (th->function.acp1 == (actionf_p1)T_VerticalDoor)
-		{
-			*::g->save_p++ = tc_door;
-			PADSAVEP();
-			door = (vldoor_t *)::g->save_p;
-			memcpy (door, th, sizeof(*door));
-			::g->save_p += sizeof(*door);
-			door->sector = (sector_t *)(door->sector - ::g->sectors);
-			continue;
-		}
-
-		if (th->function.acp1 == (actionf_p1)T_MoveFloor)
-		{
-			*::g->save_p++ = tc_floor;
-			PADSAVEP();
-			floor = (floormove_t *)::g->save_p;
-			memcpy (floor, th, sizeof(*floor));
-			::g->save_p += sizeof(*floor);
-			floor->sector = (sector_t *)(floor->sector - ::g->sectors);
-			continue;
-		}
-
-		if (th->function.acp1 == (actionf_p1)T_PlatRaise)
-		{
-			*::g->save_p++ = tc_plat;
-			PADSAVEP();
-			plat = (plat_t *)::g->save_p;
-			memcpy (plat, th, sizeof(*plat));
-			::g->save_p += sizeof(*plat);
-			plat->sector = (sector_t *)(plat->sector - ::g->sectors);
-			continue;
-		}
-
-		if (th->function.acp1 == (actionf_p1)T_FireFlicker)
-		{
-			*::g->save_p++ = tc_fire;
-			PADSAVEP();
-			fire = (fireflicker_t *)::g->save_p;
-			memcpy (fire, th, sizeof(*fire));
-			::g->save_p += sizeof(*fire);
-			fire->sector = (sector_t *)(fire->sector - ::g->sectors);
-			continue;
-		}
-
-		if (th->function.acp1 == (actionf_p1)T_LightFlash)
-		{
-			*::g->save_p++ = tc_flash;
-			PADSAVEP();
-			flash = (lightflash_t *)::g->save_p;
-			memcpy (flash, th, sizeof(*flash));
-			::g->save_p += sizeof(*flash);
-			flash->sector = (sector_t *)(flash->sector - ::g->sectors);
-			continue;
-		}
-
-		if (th->function.acp1 == (actionf_p1)T_StrobeFlash)
-		{
-			*::g->save_p++ = tc_strobe;
-			PADSAVEP();
-			strobe = (strobe_t *)::g->save_p;
-			memcpy (strobe, th, sizeof(*strobe));
-			::g->save_p += sizeof(*strobe);
-			strobe->sector = (sector_t *)(strobe->sector - ::g->sectors);
-			continue;
-		}
-
-		if (th->function.acp1 == (actionf_p1)T_Glow)
-		{
-			*::g->save_p++ = tc_glow;
-			PADSAVEP();
-			glow = (glow_t *)::g->save_p;
-			memcpy (glow, th, sizeof(*glow));
-			::g->save_p += sizeof(*glow);
-			glow->sector = (sector_t *)(glow->sector - ::g->sectors);
-			continue;
-		}
-	}
-
-	// add a terminating marker
-	*::g->save_p++ = tc_end;
-
-	sector_t* sec;
-    short* put = (short *)::g->save_p;
-	for (i=0, sec = ::g->sectors ; i < ::g->numsectors ; i++,sec++) {
-		*put++ = (short)GetMOIndex( sec->soundtarget );
-	}
-
-	::g->save_p = (byte *)put;
-
-	// add a terminating marker
-	*::g->save_p++ = tc_end;
+	DImpactDecal::SerializeTime (arc);
+	DThinker::SerializeAll (arc, hubLoad);
 }
 
-
-
+//==========================================================================
 //
-// P_UnArchiveThinkers
+// ArchiveSounds
 //
-void P_UnArchiveThinkers (void)
+//==========================================================================
+
+void P_SerializeSounds (FArchive &arc)
 {
-	byte			tclass;
-	thinker_t*		currentthinker;
-	thinker_t*		next;
-	mobj_t*			mobj;
-	ceiling_t*		ceiling;
-	vldoor_t*		door;
-	floormove_t*	floor;
-	plat_t*			plat;
-	fireflicker_t*	fire;
-	lightflash_t*	flash;
-	strobe_t*		strobe;
-	glow_t*			glow;
+	S_SerializeSounds (arc);
+	DSeqNode::SerializeSequences (arc);
+	char *name = NULL;
+	BYTE order;
 
-	thinker_t*	th;
-
-	int count = 0;
-	sector_t* ss = NULL;
-
-	int			mo_index = 0;
-	int			mo_targets[1024];
-	int			mo_tracers[1024];
-	int			mo_snext[1024];
-	int			mo_sprev[1024];
-	bool		mo_shead[1024];
-	int			mo_bnext[1024];
-	int			mo_bprev[1024];
-	bool		mo_bhead[1024];
-
-	// remove all the current thinkers
-	currentthinker = ::g->thinkercap.next;
-	while (currentthinker != &::g->thinkercap)
+	if (arc.IsStoring ())
 	{
-		next = currentthinker->next;
-
-		if (currentthinker->function.acp1 == (actionf_p1)P_MobjThinker)
-			P_RemoveMobj ((mobj_t *)currentthinker);
-		else
-			Z_Free(currentthinker);
-
-		currentthinker = next;
+		order = S_GetMusic (&name);
 	}
-
-	P_InitThinkers ();
-
-	// read in saved thinkers
-	while (1)
+	arc << name << order;
+	if (arc.IsLoading ())
 	{
-		tclass = *::g->save_p++;
-		switch (tclass)
+		if (!S_ChangeMusic (name, order))
+			if (level.cdtrack == 0 || !S_ChangeCDMusic (level.cdtrack, level.cdid))
+				S_ChangeMusic (level.Music, level.musicorder);
+	}
+	delete[] name;
+}
+
+//==========================================================================
+//
+// ArchivePolyobjs
+//
+//==========================================================================
+#define ASEG_POLYOBJS	104
+
+void P_SerializePolyobjs (FArchive &arc)
+{
+	int i;
+	FPolyObj *po;
+
+	if (arc.IsStoring ())
+	{
+		int seg = ASEG_POLYOBJS;
+		arc << seg << po_NumPolyobjs;
+		for(i = 0, po = polyobjs; i < po_NumPolyobjs; i++, po++)
 		{
-		case tc_end:
+			arc << po->tag << po->angle << po->StartSpot.x <<
+				po->StartSpot.y << po->interpolation;
+  		}
+	}
+	else
+	{
+		int data;
+		angle_t angle;
+		fixed_t deltaX, deltaY;
 
-			// clear sector thing lists
-			ss = ::g->sectors;
-			for (int i=0 ; i < ::g->numsectors ; i++, ss++) {
-				ss->thinglist = NULL;
+		arc << data;
+		if (data != ASEG_POLYOBJS)
+			I_Error ("Polyobject marker missing");
+
+		arc << data;
+		if (data != po_NumPolyobjs)
+		{
+			I_Error ("UnarchivePolyobjs: Bad polyobj count");
+		}
+		for (i = 0, po = polyobjs; i < po_NumPolyobjs; i++, po++)
+		{
+			arc << data;
+			if (data != po->tag)
+			{
+				I_Error ("UnarchivePolyobjs: Invalid polyobj tag");
 			}
+			arc << angle;
+			po->RotatePolyobj (angle, true);
+			arc << deltaX << deltaY << po->interpolation;
+			deltaX -= po->StartSpot.x;
+			deltaY -= po->StartSpot.y;
+			po->MovePolyobj (deltaX, deltaY, true);
+		}
+	}
+}
 
-			// clear blockmap thing lists
-			count = sizeof(*::g->blocklinks) * ::g->bmapwidth * ::g->bmapheight;
-			memset (::g->blocklinks, 0, count);
+//==========================================================================
+//
+// RecalculateDrawnSubsectors
+//
+// In case the subsector data is unusable this function tries to reconstruct
+// if from the linedefs' ML_MAPPED info.
+//
+//==========================================================================
 
-			// Doom 2 level 30 requires some global pointers, wheee!
-			::g->numbraintargets = 0;
+void RecalculateDrawnSubsectors()
+{
+	for(int i=0;i<numsubsectors;i++)
+	{
+		subsector_t *sub = &subsectors[i];
+		for(unsigned int j=0;j<sub->numlines;j++)
+		{
+			if (sub->firstline[j].linedef != NULL && 
+				(sub->firstline[j].linedef->flags & ML_MAPPED))
+			{
+				sub->flags |= SSECF_DRAWN;
+			}
+		}
+	}
+}
 
-			// fixup mobj_t pointers now that all thinkers have been restored
-			mo_index = 0;
-			for (th = ::g->thinkercap.next ; th != &::g->thinkercap ; th=th->next) {
-				if (th->function.acp1 == (actionf_p1)P_MobjThinker) {
-					mobj = (mobj_t*)th;
+//==========================================================================
+//
+// ArchiveSubsectors
+//
+//==========================================================================
 
-					mobj->target = GetMO( mo_targets[mo_index] );
-					mobj->tracer = GetMO( mo_tracers[mo_index] );
+void P_SerializeSubsectors(FArchive &arc)
+{
+	int num_verts, num_subs, num_nodes;	
+	BYTE by;
 
-					mobj->snext = GetMO( mo_snext[mo_index] );
-					mobj->sprev = GetMO( mo_sprev[mo_index] );
-
-					if ( mo_shead[mo_index] ) {
-						mobj->subsector->sector->thinglist = mobj;
+	if (arc.IsStoring())
+	{
+		if (hasglnodes)
+		{
+			arc << numvertexes << numsubsectors << numnodes;	// These are only for verification
+			for(int i=0;i<numsubsectors;i+=8)
+			{
+				by = 0;
+				for(int j=0;j<8;j++)
+				{
+					if (i+j<numsubsectors && (subsectors[i+j].flags & SSECF_DRAWN))
+					{
+						by |= (1<<j);
 					}
-
-					mobj->bnext = GetMO( mo_bnext[mo_index] );
-					mobj->bprev = GetMO( mo_bprev[mo_index] );
-
-					if ( mo_bhead[mo_index] ) {
-						// Is this the head of a block list?
-						int	blockx = (mobj->x - ::g->bmaporgx)>>MAPBLOCKSHIFT;
-						int	blocky = (mobj->y - ::g->bmaporgy)>>MAPBLOCKSHIFT;
-						if ( blockx >= 0 && blockx < ::g->bmapwidth && blocky >= 0 && blocky < ::g->bmapheight ) {
-							::g->blocklinks[blocky*::g->bmapwidth+blockx] = mobj;
-						}
+				}
+				arc << by;
+			}
+		}
+		else
+		{
+			int v = 0;
+			arc << v << v << v;
+		}
+	}
+	else
+	{
+		arc << num_verts << num_subs << num_nodes;
+		if (num_verts != numvertexes ||
+			num_subs != numsubsectors ||
+			num_nodes != numnodes)
+		{
+			// Nodes don't match - we can't use this info
+			for(int i=0;i<num_subs;i+=8)
+			{
+				// Skip the subsector info.
+				arc << by;
+			}
+			if (hasglnodes)
+			{
+				RecalculateDrawnSubsectors();
+			}
+			return;
+		}
+		else
+		{
+			for(int i=0;i<numsubsectors;i+=8)
+			{
+				arc << by;
+				for(int j=0;j<8;j++)
+				{
+					if ((by & (1<<j)) && i+j<numsubsectors)
+					{
+						subsectors[i+j].flags |= SSECF_DRAWN;
 					}
-
-					// Doom 2 level 30 requires some global pointers, wheee!
-					if ( mobj->type == MT_BOSSTARGET ) {
-						::g->braintargets[::g->numbraintargets] = mobj;
-						::g->numbraintargets++;
-					}
-
-					mo_index++;
 				}
 			}
-
-			int i;
-			sector_t*	sec;
-		    short*	get;
-
-			get = (short *)::g->save_p;
-			for (i=0, sec = ::g->sectors ; i < ::g->numsectors ; i++,sec++)
-			{
-				sec->soundtarget = GetMO( *get++ );
-			}
-			::g->save_p = (byte *)get;
-
-			tclass = *::g->save_p++;
-			if ( tclass != tc_end ) {
-				I_Error( "Savegame error after loading sector soundtargets." );
-			}
-
-			// print the current thinkers
-			//I_Printf( "Loadgame on leveltime %d\n====================\n", ::g->leveltime );
-			for (th = ::g->thinkercap.next ; th != &::g->thinkercap ; th=th->next)
-			{
-				//mobj_t*	test = (mobj_t*)th;
-				//I_Printf( "%3d: %x == function\n", index++, th->function.acp1 );
-			}
-
-			return; 	// end of list
-
-		case tc_mobj:
-			PADSAVEP();
-			mobj = (mobj_t*)DoomLib::Z_Malloc(sizeof(*mobj), PU_LEVEL, NULL);
-			memcpy (mobj, ::g->save_p, sizeof(*mobj));
-			::g->save_p += sizeof(*mobj);
-			mobj->state = &::g->states[(intptr_t)mobj->state];
-
-			mobj->target = NULL;
-			mobj->tracer = NULL;
-
-			if (mobj->player)
-			{
-				mobj->player = &::g->players[(intptr_t)mobj->player-1];
-				mobj->player->mo = mobj;
-			}
-
-			P_SetThingPosition (mobj);
-
-			mobj->info = &mobjinfo[mobj->type];
-			mobj->floorz = mobj->subsector->sector->floorheight;
-			mobj->ceilingz = mobj->subsector->sector->ceilingheight;
-			mobj->thinker.function.acp1 = (actionf_p1)P_MobjThinker;
-
-			// Read in 'target' and store for fixup
-			int a, b, foundIndex;
-			a = *::g->save_p++;
-			b = *::g->save_p++;
-			foundIndex = (a << 8) + b;
-			mo_targets[mo_index] = foundIndex;
-
-			// Read in 'tracer' and store for fixup
-			a = *::g->save_p++;
-			b = *::g->save_p++;
-			foundIndex = (a << 8) + b;
-			mo_tracers[mo_index] = foundIndex;
-
-			// Read in 'snext' and store for fixup
-			a = *::g->save_p++;
-			b = *::g->save_p++;
-			foundIndex = (a << 8) + b;
-			mo_snext[mo_index] = foundIndex;
-
-			// Read in 'sprev' and store for fixup
-			a = *::g->save_p++;
-			b = *::g->save_p++;
-			foundIndex = (a << 8) + b;
-			mo_sprev[mo_index] = foundIndex;
-
-			foundIndex = *::g->save_p++;
-			mo_shead[mo_index] = foundIndex == 1;
-
-			// Read in 'bnext' and store for fixup
-			a = *::g->save_p++;
-			b = *::g->save_p++;
-			foundIndex = (a << 8) + b;
-			mo_bnext[mo_index] = foundIndex;
-
-			// Read in 'bprev' and store for fixup
-			a = *::g->save_p++;
-			b = *::g->save_p++;
-			foundIndex = (a << 8) + b;
-			mo_bprev[mo_index] = foundIndex;
-
-			foundIndex = *::g->save_p++;
-			mo_bhead[mo_index] = foundIndex == 1;
-
-			mo_index++;
-
-			P_AddThinker (&mobj->thinker);
-			break;
-
-		case tc_ceiling:
-			PADSAVEP();
-			ceiling = (ceiling_t*)DoomLib::Z_Malloc(sizeof(*ceiling), PU_LEVEL, NULL);
-			memcpy (ceiling, ::g->save_p, sizeof(*ceiling));
-			::g->save_p += sizeof(*ceiling);
-			ceiling->sector = &::g->sectors[(intptr_t)ceiling->sector];
-			ceiling->sector->specialdata = ceiling;
-
-			if (ceiling->thinker.function.acp1)
-				ceiling->thinker.function.acp1 = (actionf_p1)T_MoveCeiling;
-
-			P_AddThinker (&ceiling->thinker);
-			P_AddActiveCeiling(ceiling);
-			break;
-
-		case tc_door:
-			PADSAVEP();
-			door = (vldoor_t*)DoomLib::Z_Malloc(sizeof(*door), PU_LEVEL, NULL);
-			memcpy (door, ::g->save_p, sizeof(*door));
-			::g->save_p += sizeof(*door);
-			door->sector = &::g->sectors[(intptr_t)door->sector];
-			door->sector->specialdata = door;
-			door->thinker.function.acp1 = (actionf_p1)T_VerticalDoor;
-			P_AddThinker (&door->thinker);
-			break;
-
-		case tc_floor:
-			PADSAVEP();
-			floor = (floormove_t*)DoomLib::Z_Malloc (sizeof(*floor), PU_LEVEL, NULL);
-			memcpy (floor, ::g->save_p, sizeof(*floor));
-			::g->save_p += sizeof(*floor);
-			floor->sector = &::g->sectors[(intptr_t)floor->sector];
-			floor->sector->specialdata = floor;
-			floor->thinker.function.acp1 = (actionf_p1)T_MoveFloor;
-			P_AddThinker (&floor->thinker);
-			break;
-
-		case tc_plat:
-			PADSAVEP();
-			plat = (plat_t*)DoomLib::Z_Malloc (sizeof(*plat), PU_LEVEL, NULL);
-			memcpy (plat, ::g->save_p, sizeof(*plat));
-			::g->save_p += sizeof(*plat);
-			plat->sector = &::g->sectors[(intptr_t)plat->sector];
-			plat->sector->specialdata = plat;
-
-			if (plat->thinker.function.acp1)
-				plat->thinker.function.acp1 = (actionf_p1)T_PlatRaise;
-
-			P_AddThinker (&plat->thinker);
-			P_AddActivePlat(plat);
-			break;
-
-		case tc_fire:
-			PADSAVEP();
-			fire = (fireflicker_t*)DoomLib::Z_Malloc (sizeof(*fire), PU_LEVEL, NULL);
-			memcpy (fire, ::g->save_p, sizeof(*fire));
-			::g->save_p += sizeof(*fire);
-			fire->sector = &::g->sectors[(intptr_t)fire->sector];
-			fire->thinker.function.acp1 = (actionf_p1)T_FireFlicker;
-			P_AddThinker (&fire->thinker);
-			break;
-
-		case tc_flash:
-			PADSAVEP();
-			flash = (lightflash_t*)DoomLib::Z_Malloc (sizeof(*flash), PU_LEVEL, NULL);
-			memcpy (flash, ::g->save_p, sizeof(*flash));
-			::g->save_p += sizeof(*flash);
-			flash->sector = &::g->sectors[(intptr_t)flash->sector];
-			flash->thinker.function.acp1 = (actionf_p1)T_LightFlash;
-			P_AddThinker (&flash->thinker);
-			break;
-
-		case tc_strobe:
-			PADSAVEP();
-			strobe = (strobe_t*)DoomLib::Z_Malloc (sizeof(*strobe), PU_LEVEL, NULL);
-			memcpy (strobe, ::g->save_p, sizeof(*strobe));
-			::g->save_p += sizeof(*strobe);
-			strobe->sector = &::g->sectors[(intptr_t)strobe->sector];
-			strobe->thinker.function.acp1 = (actionf_p1)T_StrobeFlash;
-			P_AddThinker (&strobe->thinker);
-			break;
-
-		case tc_glow:
-			PADSAVEP();
-			glow = (glow_t*)DoomLib::Z_Malloc (sizeof(*glow), PU_LEVEL, NULL);
-			memcpy (glow, ::g->save_p, sizeof(*glow));
-			::g->save_p += sizeof(*glow);
-			glow->sector = &::g->sectors[(intptr_t)glow->sector];
-			glow->thinker.function.acp1 = (actionf_p1)T_Glow;
-			P_AddThinker (&glow->thinker);
-			break;
-
-		default:
-			I_Error ("Unknown tclass %i in savegame",tclass);
 		}
 	}
 }
-
-
-//
-// P_ArchiveSpecials
-//
-
-
-
-//
-// Things to handle:
-//
-// T_MoveCeiling, (ceiling_t: sector_t * swizzle), - active list
-// T_VerticalDoor, (vldoor_t: sector_t * swizzle),
-// T_MoveFloor, (floormove_t: sector_t * swizzle),
-// T_LightFlash, (lightflash_t: sector_t * swizzle),
-// T_StrobeFlash, (strobe_t: sector_t *),
-// T_Glow, (glow_t: sector_t *),
-// T_PlatRaise, (plat_t: sector_t *), - active list
-//
-void P_ArchiveSpecials (void)
-{
-    thinker_t*		th;
-    ceiling_t*		ceiling;
-    vldoor_t*		door;
-    floormove_t*	floor;
-    plat_t*		plat;
-    lightflash_t*	flash;
-    strobe_t*		strobe;
-    glow_t*		glow;
-    int			i;
-	
-    // save off the current thinkers
-    for (th = ::g->thinkercap.next ; th != &::g->thinkercap ; th=th->next)
-    {
-	if (th->function.acv == (actionf_v)NULL)
-	{
-	    for (i = 0; i < MAXCEILINGS;i++)
-		if (::g->activeceilings[i] == (ceiling_t *)th)
-		    break;
-	    
-	    if (i<MAXCEILINGS)
-	    {
-		*::g->save_p++ = tc_ceiling;
-		PADSAVEP();
-		ceiling = (ceiling_t *)::g->save_p;
-		memcpy (ceiling, th, sizeof(*ceiling));
-		::g->save_p += sizeof(*ceiling);
-		ceiling->sector = (sector_t *)(ceiling->sector - ::g->sectors);
-	    }
-	    continue;
-	}
-			
-	if (th->function.acp1 == (actionf_p1)T_MoveCeiling)
-	{
-	    *::g->save_p++ = tc_ceiling;
-	    PADSAVEP();
-	    ceiling = (ceiling_t *)::g->save_p;
-	    memcpy (ceiling, th, sizeof(*ceiling));
-	    ::g->save_p += sizeof(*ceiling);
-	    ceiling->sector = (sector_t *)(ceiling->sector - ::g->sectors);
-	    continue;
-	}
-			
-	if (th->function.acp1 == (actionf_p1)T_VerticalDoor)
-	{
-	    *::g->save_p++ = tc_door;
-	    PADSAVEP();
-	    door = (vldoor_t *)::g->save_p;
-	    memcpy (door, th, sizeof(*door));
-	    ::g->save_p += sizeof(*door);
-	    door->sector = (sector_t *)(door->sector - ::g->sectors);
-	    continue;
-	}
-			
-	if (th->function.acp1 == (actionf_p1)T_MoveFloor)
-	{
-	    *::g->save_p++ = tc_floor;
-	    PADSAVEP();
-	    floor = (floormove_t *)::g->save_p;
-	    memcpy (floor, th, sizeof(*floor));
-	    ::g->save_p += sizeof(*floor);
-	    floor->sector = (sector_t *)(floor->sector - ::g->sectors);
-	    continue;
-	}
-			
-	if (th->function.acp1 == (actionf_p1)T_PlatRaise)
-	{
-	    *::g->save_p++ = tc_plat;
-	    PADSAVEP();
-	    plat = (plat_t *)::g->save_p;
-	    memcpy (plat, th, sizeof(*plat));
-	    ::g->save_p += sizeof(*plat);
-	    plat->sector = (sector_t *)(plat->sector - ::g->sectors);
-	    continue;
-	}
-			
-	if (th->function.acp1 == (actionf_p1)T_LightFlash)
-	{
-	    *::g->save_p++ = tc_flash;
-	    PADSAVEP();
-	    flash = (lightflash_t *)::g->save_p;
-	    memcpy (flash, th, sizeof(*flash));
-	    ::g->save_p += sizeof(*flash);
-	    flash->sector = (sector_t *)(flash->sector - ::g->sectors);
-	    continue;
-	}
-			
-	if (th->function.acp1 == (actionf_p1)T_StrobeFlash)
-	{
-	    *::g->save_p++ = tc_strobe;
-	    PADSAVEP();
-	    strobe = (strobe_t *)::g->save_p;
-	    memcpy (strobe, th, sizeof(*strobe));
-	    ::g->save_p += sizeof(*strobe);
-	    strobe->sector = (sector_t *)(strobe->sector - ::g->sectors);
-	    continue;
-	}
-			
-	if (th->function.acp1 == (actionf_p1)T_Glow)
-	{
-	    *::g->save_p++ = tc_glow;
-	    PADSAVEP();
-	    glow = (glow_t *)::g->save_p;
-	    memcpy (glow, th, sizeof(*glow));
-	    ::g->save_p += sizeof(*glow);
-	    glow->sector = (sector_t *)(glow->sector - ::g->sectors);
-	    continue;
-	}
-    }
-	
-    // add a terminating marker
-    *::g->save_p++ = tc_endspecials;	
-
-}
-
-
-//
-// P_UnArchiveSpecials
-//
-void P_UnArchiveSpecials (void)
-{
-    byte		tclass;
-    ceiling_t*		ceiling;
-    vldoor_t*		door;
-    floormove_t*	floor;
-    plat_t*		plat;
-    lightflash_t*	flash;
-    strobe_t*		strobe;
-    glow_t*		glow;
-
-    // read in saved thinkers
-    while (1)
-    {
-	tclass = *::g->save_p++;
-	switch (tclass)
-	{
-	  case tc_endspecials:
-	    return;	// end of list
-			
-	  case tc_ceiling:
-	    PADSAVEP();
-	    ceiling = (ceiling_t*)DoomLib::Z_Malloc(sizeof(*ceiling), PU_LEVEL, NULL);
-	    memcpy (ceiling, ::g->save_p, sizeof(*ceiling));
-	    ::g->save_p += sizeof(*ceiling);
-	    ceiling->sector = &::g->sectors[(intptr_t)ceiling->sector];
-	    ceiling->sector->specialdata = ceiling;
-
-	    if (ceiling->thinker.function.acp1)
-		ceiling->thinker.function.acp1 = (actionf_p1)T_MoveCeiling;
-
-	    P_AddThinker (&ceiling->thinker);
-	    P_AddActiveCeiling(ceiling);
-	    break;
-				
-	  case tc_door:
-	    PADSAVEP();
-	    door = (vldoor_t*)DoomLib::Z_Malloc(sizeof(*door), PU_LEVEL, NULL);
-	    memcpy (door, ::g->save_p, sizeof(*door));
-	    ::g->save_p += sizeof(*door);
-	    door->sector = &::g->sectors[(intptr_t)door->sector];
-	    door->sector->specialdata = door;
-	    door->thinker.function.acp1 = (actionf_p1)T_VerticalDoor;
-	    P_AddThinker (&door->thinker);
-	    break;
-				
-	  case tc_floor:
-	    PADSAVEP();
-	    floor = (floormove_t*)DoomLib::Z_Malloc (sizeof(*floor), PU_LEVEL, NULL);
-	    memcpy (floor, ::g->save_p, sizeof(*floor));
-	    ::g->save_p += sizeof(*floor);
-	    floor->sector = &::g->sectors[(intptr_t)floor->sector];
-	    floor->sector->specialdata = floor;
-	    floor->thinker.function.acp1 = (actionf_p1)T_MoveFloor;
-	    P_AddThinker (&floor->thinker);
-	    break;
-				
-	  case tc_plat:
-	    PADSAVEP();
-	    plat = (plat_t*)DoomLib::Z_Malloc (sizeof(*plat), PU_LEVEL, NULL);
-	    memcpy (plat, ::g->save_p, sizeof(*plat));
-	    ::g->save_p += sizeof(*plat);
-	    plat->sector = &::g->sectors[(intptr_t)plat->sector];
-	    plat->sector->specialdata = plat;
-
-	    if (plat->thinker.function.acp1)
-		plat->thinker.function.acp1 = (actionf_p1)T_PlatRaise;
-
-	    P_AddThinker (&plat->thinker);
-	    P_AddActivePlat(plat);
-	    break;
-				
-	  case tc_flash:
-	    PADSAVEP();
-	    flash = (lightflash_t*)DoomLib::Z_Malloc (sizeof(*flash), PU_LEVEL, NULL);
-	    memcpy (flash, ::g->save_p, sizeof(*flash));
-	    ::g->save_p += sizeof(*flash);
-	    flash->sector = &::g->sectors[(intptr_t)flash->sector];
-	    flash->thinker.function.acp1 = (actionf_p1)T_LightFlash;
-	    P_AddThinker (&flash->thinker);
-	    break;
-				
-	  case tc_strobe:
-	    PADSAVEP();
-	    strobe = (strobe_t*)DoomLib::Z_Malloc (sizeof(*strobe), PU_LEVEL, NULL);
-	    memcpy (strobe, ::g->save_p, sizeof(*strobe));
-	    ::g->save_p += sizeof(*strobe);
-	    strobe->sector = &::g->sectors[(intptr_t)strobe->sector];
-	    strobe->thinker.function.acp1 = (actionf_p1)T_StrobeFlash;
-	    P_AddThinker (&strobe->thinker);
-	    break;
-				
-	  case tc_glow:
-	    PADSAVEP();
-	    glow = (glow_t*)DoomLib::Z_Malloc (sizeof(*glow), PU_LEVEL, NULL);
-	    memcpy (glow, ::g->save_p, sizeof(*glow));
-	    ::g->save_p += sizeof(*glow);
-	    glow->sector = &::g->sectors[(intptr_t)glow->sector];
-	    glow->thinker.function.acp1 = (actionf_p1)T_Glow;
-	    P_AddThinker (&glow->thinker);
-	    break;
-				
-	  default:
-	    I_Error ("P_UnarchiveSpecials:Unknown tclass %i "
-		     "in savegame",tclass);
-	}
-	
-    }
-
-}
-
-

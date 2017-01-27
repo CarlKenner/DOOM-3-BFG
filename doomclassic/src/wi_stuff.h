@@ -1,47 +1,90 @@
-/*
-===========================================================================
-
-Doom 3 BFG Edition GPL Source Code
-Copyright (C) 1993-2012 id Software LLC, a ZeniMax Media company. 
-
-This file is part of the Doom 3 BFG Edition GPL Source Code ("Doom 3 BFG Edition Source Code").  
-
-Doom 3 BFG Edition Source Code is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-Doom 3 BFG Edition Source Code is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with Doom 3 BFG Edition Source Code.  If not, see <http://www.gnu.org/licenses/>.
-
-In addition, the Doom 3 BFG Edition Source Code is also subject to certain additional terms. You should have received a copy of these additional terms immediately following the terms and conditions of the GNU General Public License which accompanied the Doom 3 BFG Edition Source Code.  If not, please request a copy in writing from id Software at the address below.
-
-If you have questions concerning this license or the applicable additional terms, you may contact in writing id Software LLC, c/o ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
-
-===========================================================================
-*/
+// Emacs style mode select	 -*- C++ -*- 
+//-----------------------------------------------------------------------------
+//
+// $Id:$
+//
+// Copyright (C) 1993-1996 by id Software, Inc.
+//
+// This source is available for distribution and/or modification
+// only under the terms of the DOOM Source Code License as
+// published by id Software. All rights reserved.
+//
+// The source is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// FITNESS FOR A PARTICULAR PURPOSE. See the DOOM Source Code License
+// for more details.
+//
+// DESCRIPTION:
+//	Intermission.
+//
+//-----------------------------------------------------------------------------
 
 #ifndef __WI_STUFF__
 #define __WI_STUFF__
 
-//#include "v_video.h"
-
 #include "doomdef.h"
 
+class FTexture;
+
+//
+// INTERMISSION
+// Structure passed e.g. to WI_Start(wb)
+//
+struct wbplayerstruct_t
+{
+	bool		in;			// whether the player is in game
+
+	// Player stats, kills, collected items etc.
+	int			skills;
+	int			sitems;
+	int			ssecret;
+	int			stime;
+	int			frags[MAXPLAYERS];
+	int			fragcount;	// [RH] Cumulative frags for this player
+};
+
+struct wbstartstruct_t
+{
+	int			finished_ep;
+	int			next_ep;
+
+	FString		current;	// [RH] Name of map just finished
+	FString		next;		// next level, [RH] actual map name
+
+	FTexture	*LName0;
+	FTexture	*LName1;
+
+	int			maxkills;
+	int			maxitems;
+	int			maxsecret;
+	int			maxfrags;
+
+	// the par time and sucktime
+	int			partime;	// in tics
+	int			sucktime;	// in minutes
+
+	// total time for the entire current game
+	int			totaltime;
+
+	// index of this player in game
+	int			pnum;
+
+	wbplayerstruct_t	plyr[MAXPLAYERS];
+};
+
+// Intermission stats.
+// Parameters for world map / intermission.
+extern wbstartstruct_t wminfo;
+
+
 // Called by main loop, animate the intermission.
-void WI_Ticker (void);
+void WI_Ticker ();
 
 // Called by main loop,
 // draws the intermission directly into the screen buffer.
-void WI_Drawer (void);
+void WI_Drawer ();
 
 // Setup for an intermission screen.
-void WI_Start(wbstartstruct_t*	 wbstartstruct);
+void WI_Start (wbstartstruct_t *wbstartstruct);
 
 #endif
-

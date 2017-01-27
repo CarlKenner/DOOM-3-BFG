@@ -1,0 +1,181 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<title>GZ3Doom: Doom game for the Oculus Rift VR device</title>
+<meta http-equiv="content-type" content="text/html; charset=utf-8" />
+<meta property="og:image" content="https://raw.githubusercontent.com/cmbruns/gz3doom/master/gz3doom/images/DoomStatusHead_oculus.png" />
+<meta property="og:image:type" content="image/png" />
+<link href="css/rational/default.css" rel="stylesheet" type="text/css" />
+</head>
+<body>
+
+<div id="outer">
+  <div id="header">
+    <h1><a href="http://rotatingpenguin.com/gz3doom/">GZ3Doom</a></h1>
+    <h2>Classic Doom Games in Virtual Reality</h2>
+  </div>
+  <div id="menu">
+    <ul>
+      <li class="first"><a href="http://rotatingpenguin.com/gz3doom/" accesskey="1">Home</a></li>
+      <li><a href="#news" accesskey="2">News</a></li>
+      <li><a href="#download" accesskey="3">Download</a></li>
+      <li><a href="#source_code" accesskey="4">Source Code</a></li>
+      <li><a href="#credits" accesskey="5">Credits</a></li>
+      <li><a href="#contact" accesskey="6">Contact Us</a></li>
+<!--      <li><a href="#donate" accesskey="7">Donate</a></li> -->
+    </ul>
+  </div>
+  <div id="content">
+    <div id="primaryContentContainer">
+      <div id="primaryContent">
+        <h2>Welcome to GZ3Doom at rotatingpenguin.com!
+        <img src="https://raw.githubusercontent.com/cmbruns/gz3doom/master/gz3doom/images/DoomStatusHead_oculus.png"></h2>
+        <p><strong>GZ3Doom</strong> is a modification I made to the beautiful gzdoom game.  I added several stereoscopic 3D modes, including one for the awesome Oculus Rift virtual reality headset.</p>
+
+<iframe width="420" height="315" src="//www.youtube.com/embed/gJL_5EZiQWY" frameborder="0" allowfullscreen></iframe>
+<p/>
+
+<h3><a name="news">News</a></h3>
+
+<p>April 16, 2016: Release of GZ3Doom version 1.8.10_e (<a href="https://github.com/cmbruns/gz3doom/releases">download</a> from github)</p>
+This is a bug fix release. Summary of changes this release:
+<ul>
+<li>Use smaller HUD area in Rift mode, for better fit with Rift CV1 FOV</li>
+<li>(finally!) Repair appearance of certain mapping error glitches</li>
+<li>Correctly show transparent weapon when player is partially invisible</li>
+<li>Radiation suit and other screen effects now cover the full view</li>
+<li>Explictly enumerate command line options in Rift shortcut, so power users can more easily modify them</li>
+<li>Increase default run speed to 80. (I personally also assign a controller button to "run"...)</li>
+<li>Turn off screen wiping in Rift shortcut and oculardium_optimosa command, since screen wipes were always glitchy anyway</li>
+<li>Automatically activate xbox controller support in Rift shortcut, because the Rift comes with one, and it's actually pretty nice for standing play</li>
+<li>Executable is now built with Visual Studio 2015, rather than Visual Studio 2010</li>
+</ul>
+
+<h3><a name="instructions">Instructions</a></h3>
+
+<p>To play GZ3Doom in Oculus Rift mode:</p>
+<ul>
+<li>Install <a href="https://www.oculus.com/en-us/setup/">Oculus Runtime 1.3</a></li>
+<li>Install recent display driver version</li>
+<li>Download GZ3Doom (<a href="#download">below</a>)</li>
+<li>Obtain a <a href="http://zdoom.org/wiki/IWAD">.WAD file</a> for the game you want to play, and place the .WAD file in the same folder you installed GZ3Doom to</li>
+<li>Turn on your Oculus Rift</li>
+<li>Test the Oculus Home scene in the Oculus Rift to make sure your Rift functions</li>
+<li>Launch GZ3Doom, preferably using the Rift launch shortcut Start Menu-&gt;Programs-&gt;GZ3Doom-&gt;&quot;GZ3Doom on Oculus Rift&quot;</li>
+<li>Set video mode to 640x480</li>
+<li>Activate Oculus Rift mode by typing in the zdoom console: <blockquote>&gt; vr_mode 8</blockquote></li>
+<li>See <a href="#tips">Tips</a> section below, for more suggestions.</li>
+</ul>
+
+<p>To activate the zdoom console, press &quot;~&quot; (tilde).</p>
+
+<p>
+Other 3D mode (vr_mode) options for vr_mode console command:
+<ul>
+<li> 0 Mono/Off/Normal</li>
+<li> 1 Green-Magenta anaglyph</li>
+<li> 2 Red-Cyan anaglyph</li>
+<li> 3 Side-by-side</li>
+<li> 4 Side-by-side narrow</li>
+<li> 5 Left-eye view</li>
+<li> 6 Right-eye view</li>
+<li> 7 Quad-buffered (3D Vision)</li>
+<li> 8 Oculus Rift</li>
+</ul>
+
+See more details at the <a href="https://github.com/cmbruns/gz3doom/wiki/Stereoscopic-3D-Modes-%28vr_mode%29">vr_mode wiki</a>
+
+<p>
+
+<h4><a name="tips">Tips</a></h4>
+<ul>
+<li>Turn off mouse menu selection for Rift mode - you will want to use the keyboard/controller buttons. (Options-&gt;Mouse Options-&gt;Enable Mouse in Menus-&gt;NO)</li>
+<li>Turn off mouse look for Rift mode; the view will be slightly smoother. (Options-&gt;Mouse Options-&gt;Always Mouselook-&gt;OFF)</li>
+<li>Magnify HUD items (including crosshair) by setting the following values in the console:
+  <ul>
+  <li>CON_SCALETEXT 1</li>
+  <li>HUD_SCALE 1</li>
+  <li>HUD_ALTHUDSCALE 1</li>
+  <li>CROSSHAIR_SCALE 1</li>
+  </ul></li>
+<li>If you dislike the high speed your character moves at, try typing &quot;TURBO 65&quot; in the console.</li>
+<li>If the player bobbing motion makes you queasy, try typing &quot;MOVEBOB 0&quot; in the console.</li>
+<li>To play other doom games, drag a wad file (along with pk3 files, if needed) onto the installed gz3doom.exe program</li>
+<li>Configure a wireless controller using Menu-&gt;Options-&gt;Configure Controls, and play standing up. Consider configuring turning controls using the "snap 45 left" and "snap 45 right" controls, for increased comfort.</li>
+</ul>
+
+<h3><a name="download">Download</a></h3>
+
+Download GZ3Doom installers for Windows from <a href="https://github.com/cmbruns/gz3doom/releases">github</a>.
+
+
+<h3><a name="known_issues">Known Issues</a></h3>
+Browse and/or contribute known GZ3Doom problems at <a href="https://github.com/cmbruns/gz3doom/issues">github</a>.
+
+<h3><a name="source_code">Source Code</a></h3>
+<p>Get the source code of my modifications to gzdoom on <a href="https://github.com/cmbruns/gzdoom">github</a>.</p>
+
+<h3><a name="credits">Credits</a></h3>
+
+<p>GZ3Doom is based on <a href="http://www.osnanet.de/c.oelckers/gzdoom/index.html">gzdoom</a>, and adds stereoscopic rendering, including Oculus Rift mode. Graf Zahl, the maintainer of GZDoom, recently moved the GZDoom source code to github, making it easier for me to add this feature to GZDoom. My contribution consists of a few days work. These other folks have spent decades enhancing Doom so that I would be able to do this.
+
+<p><a href="http://www.osnanet.de/c.oelckers/gzdoom/index.html">gzdoom</a> is in turn based on <a href="http://zdoom.org/">zdoom</a>, and adds OpenGL rendering.
+
+<p><a href="http://zdoom.org/">zdoom</a> is based on <a href="http://en.wikipedia.org/wiki/Doom_%28video_game%29">Doom</a>, the revolutionary computer game from the 1990s.
+
+<p>Torr Samaho helped to get GZ3Doom working with the Nvidia 3D vision system (on consumer-level video boards!).</p>
+
+<p>Other improvements to GZ3Doom would not have been possible without the helpful feedback of many players, including Indecom, naitguolf, Lagahan/ShadowEater, Santimun, Hadstec, drash, LitteGuy, cool2000m, RandomGuy7, Zeberpal, skyrimguy, Nash, Trisk, and many others. Thanks everyone for the helpful feedback.</p>
+
+<p>Skyjake and DaniJ, of the Doomsday project, helped create many other advances that I have back-ported into GZ3Doom.</p>
+
+<h3><a name="contact">Contact</a></h3>
+<p>Please send feedback to <a href="mailto:gz3doom@rotatingpenguin.com">gz3doom@rotatingpenguin.com</a>.</p>
+
+<!-- Paypal donate button -->
+<form action="https://www.paypal.com/cgi-bin/webscr" method="post" target="_top">
+<input type="hidden" name="cmd" value="_s-xclick">
+<input type="hidden" name="encrypted" value="-----BEGIN PKCS7-----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-----END PKCS7-----
+">
+<input type="image" src="https://www.paypalobjects.com/en_US/i/btn/btn_donateCC_LG.gif" border="0" name="submit" alt="PayPal - The safer, easier way to pay online!">
+<img alt="" border="0" src="https://www.paypalobjects.com/en_US/i/scr/pixel.gif" width="1" height="1">
+</form>
+
+      </div>
+    </div>
+    <div id="secondaryContent">
+      <h3>Online Forums</h3>
+      <ul>
+        <li><a href="https://developer.oculusvr.com/forums/viewtopic.php?f=42&t=4743">GZ3Doom at Oculus Dev Forum</a></li>
+        <li><a href="http://forum.zdoom.org/viewtopic.php?f=19&t=37659&p=716314#p716310">GZ3Doom at ZDoom Forums</a></li>
+      </ul>
+      <h3>Example Videos</h3>
+      <ul>
+        <li><a href="http://www.youtube.com/watch?v=gJL_5EZiQWY">Original GZ3Doom Demo</a></li>
+        <li><a href="http://youtu.be/urT717FUsNM">Version 1.8.2b</a></li>
+        <li><a href="http://www.youtube.com/watch?v=SGRFEorJf1o">Doom 1 Episode 1</a></li>
+        <li><a href="http://www.youtube.com/watch?v=0sneFVXlqXg">Brutal Doom</a></li>
+        <li><a href="http://www.youtube.com/watch?v=ULKn_ccb7wU">Brutal Doom</a></li>
+      </ul>
+    </div>
+    <div class="clear"></div>
+  </div>
+  <div id="footer">
+    <p>Copyright &copy; 2006 C Bruns. CSS from <a href="http://www.freecsstemplates.org">Free CSS Templates</a></p>
+  </div>
+</div>
+
+<script type="text/javascript">
+var gaJsHost = (("https:" == document.location.protocol) ? "https://ssl." : "http://www.");
+document.write(unescape("%3Cscript src='" + gaJsHost + "google-analytics.com/ga.js' type='text/javascript'%3E%3C/script%3E"));
+</script>
+<script type="text/javascript">
+var pageTracker = _gat._getTracker("UA-2854544-4");
+pageTracker._initData();
+pageTracker._trackPageview();
+</script>
+
+</body>
+
+</html>
+

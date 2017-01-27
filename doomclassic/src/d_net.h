@@ -1,154 +1,181 @@
-/*
-===========================================================================
+// Emacs style mode select	 -*- C++ -*- 
+//-----------------------------------------------------------------------------
+//
+// $Id:$
+//
+// Copyright (C) 1993-1996 by id Software, Inc.
+//
+// This source is available for distribution and/or modification
+// only under the terms of the DOOM Source Code License as
+// published by id Software. All rights reserved.
+//
+// The source is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// FITNESS FOR A PARTICULAR PURPOSE. See the DOOM Source Code License
+// for more details.
+//
+// DESCRIPTION:
+//		Networking stuff.
+//
+//-----------------------------------------------------------------------------
 
-Doom 3 BFG Edition GPL Source Code
-Copyright (C) 1993-2012 id Software LLC, a ZeniMax Media company. 
-
-This file is part of the Doom 3 BFG Edition GPL Source Code ("Doom 3 BFG Edition Source Code").  
-
-Doom 3 BFG Edition Source Code is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-Doom 3 BFG Edition Source Code is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with Doom 3 BFG Edition Source Code.  If not, see <http://www.gnu.org/licenses/>.
-
-In addition, the Doom 3 BFG Edition Source Code is also subject to certain additional terms. You should have received a copy of these additional terms immediately following the terms and conditions of the GNU General Public License which accompanied the Doom 3 BFG Edition Source Code.  If not, please request a copy in writing from id Software at the address below.
-
-If you have questions concerning this license or the applicable additional terms, you may contact in writing id Software LLC, c/o ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
-
-===========================================================================
-*/
 
 #ifndef __D_NET__
 #define __D_NET__
 
-#include "d_player.h"
-
-
-#ifdef __GNUG__
-#pragma interface
-#endif
+#include "doomtype.h"
+#include "doomdef.h"
+#include "d_ticcmd.h"
 
 
 //
 // Network play related stuff.
 // There is a data struct that stores network
-//  communication related stuff, and another
-//  one that defines the actual packets to
-//  be transmitted.
+//	communication related stuff, and another
+//	one that defines the actual packets to
+//	be transmitted.
 //
 
 #define DOOMCOM_ID		0x12345678l
+#define MAXNETNODES		8	// max computers in a game
+#define BACKUPTICS		36	// number of tics to remember
+#define MAXTICDUP		5
+#define LOCALCMDTICS	(BACKUPTICS*MAXTICDUP)
 
-// Max computers/players in a game.
-#define MAXNETNODES		8
 
+#ifdef DJGPP
+// The DOS drivers provide a pretty skimpy buffer.
+// Probably not enough.
+#define MAX_MSGLEN		(BACKUPTICS*10)
+#else
+#define MAX_MSGLEN		14000
+#endif
 
-// Networking and tick handling related.
-#define BACKUPTICS		64
-
-typedef enum
-{
-    CMD_SEND	= 1,
-    CMD_GET	= 2
-
-} command_t;
-
+#define CMD_SEND	1
+#define CMD_GET		2
 
 //
 // Network packet data.
 //
-typedef struct
-{
-    // High bit is retransmit request.
-    unsigned		checksum;
-    // Only valid if NCMD_RETRANSMIT.
-    byte		retransmitfrom;
-	
-	byte		sourceDest;
-    
-    byte		starttic;
-    byte		player;
-    byte		numtics;
-    ticcmd_t		cmds[BACKUPTICS];
-
-} doomdata_t;
-
-
-
-
 struct doomcom_t
 {
-    // Supposed to be DOOMCOM_ID?
-    long		id;
-    
-    // DOOM executes an int to execute commands.
-    short		intnum;		
-    // Communication between DOOM and the driver.
-    // Is CMD_SEND or CMD_GET.
-    short		command;
-    // Is dest for send, set by get (-1 = no packet).
-    short		remotenode;
-    
-    // Number of bytes in doomdata to be sent
-    short		datalength;
+	DWORD	id;				// should be DOOMCOM_ID
+	SWORD	intnum;			// DOOM executes an int to execute commands
 
-    // Info common to all nodes.
-    // Console is allways node 0.
-    short		numnodes;
-    // Flag: 1 = no duplication, 2-5 = dup for slow nets.
-    short		ticdup;
-    // Flag: 1 = send a backup tic in every packet.
-    short		extratics;
-    // Flag: 1 = deathmatch.
-    short		deathmatch;
-    // Flag: -1 = new game, 0-5 = load savegame
-    short		savegame;
-    short		episode;	// 1-3
-    short		map;		// 1-9
-    short		skill;		// 1-5
+// communication between DOOM and the driver
+	SWORD	command;		// CMD_SEND or CMD_GET
+	SWORD	remotenode;		// dest for send, set by get (-1 = no packet).
+	SWORD	datalength;		// bytes in doomdata to be sent
 
-    // Info specific to this node.
-    short		consoleplayer;
-    short		numplayers;
-    
-    // These are related to the 3-display mode,
-    //  in which two drones looking left and right
-    //  were used to render two additional views
-    //  on two additional computers.
-    // Probably not operational anymore.
-    // 1 = left, 0 = center, -1 = right
-    short		angleoffset;
-    // 1 = drone
-    short		drone;		
+// info common to all nodes
+	SWORD	numnodes;		// console is always node 0.
+	SWORD	ticdup;			// 1 = no duplication, 2-5 = dup for slow nets
+#ifdef DJGPP
+	SWORD	pad[5];			// keep things aligned for DOS drivers
+#endif
 
-    // The packet data to be sent.
-    doomdata_t		data;
-    
-} ;
+// info specific to this node
+	SWORD	consoleplayer;
+	SWORD	numplayers;
+#ifdef DJGPP
+	SWORD	angleoffset;	// does not work, but needed to preserve
+	SWORD	drone;			// alignment for DOS drivers
+#endif
+
+// packet data to be sent
+	BYTE	data[MAX_MSGLEN];
+	
+};
 
 
-class idUserCmdMgr;
+class FDynamicBuffer
+{
+public:
+	FDynamicBuffer ();
+	~FDynamicBuffer ();
+
+	void SetData (const BYTE *data, int len);
+	BYTE *GetData (int *len = NULL);
+
+private:
+	BYTE *m_Data;
+	int m_Len, m_BufferLen;
+};
+
+extern FDynamicBuffer NetSpecs[MAXPLAYERS][BACKUPTICS];
 
 // Create any new ticcmds and broadcast to other players.
-void NetUpdate ( idUserCmdMgr * userCmdMgr );
+void NetUpdate (void);
 
 // Broadcasts special packets to other players
-//  to notify of game exit
+//	to notify of game exit
 void D_QuitNetGame (void);
 
 //? how many ticks to run?
-bool TryRunTics (void);
+void TryRunTics (void);
 
+//Use for checking to see if the netgame has stalled
+void Net_CheckLastReceived(int);
+
+// [RH] Functions for making and using special "ticcmds"
+void Net_NewMakeTic ();
+void Net_WriteByte (BYTE);
+void Net_WriteWord (short);
+void Net_WriteLong (int);
+void Net_WriteFloat (float);
+void Net_WriteString (const char *);
+void Net_WriteBytes (const BYTE *, int len);
+
+void Net_DoCommand (int type, BYTE **stream, int player);
+void Net_SkipCommand (int type, BYTE **stream);
+
+void Net_ClearBuffers ();
+
+
+// Netgame stuff (buffers and pointers, i.e. indices).
+
+// This is the interface to the packet driver, a separate program
+// in DOS, but just an abstraction here.
+extern	doomcom_t		doomcom;
+
+extern	struct ticcmd_t	localcmds[LOCALCMDTICS];
+
+extern	int 			maketic;
+extern	int 			nettics[MAXNETNODES];
+extern	int				netdelay[MAXNETNODES][BACKUPTICS];
+extern	int 			nodeforplayer[MAXPLAYERS];
+
+extern	ticcmd_t		netcmds[MAXPLAYERS][BACKUPTICS];
+extern	int 			ticdup;
+
+// [RH]
+// New generic packet structure:
+//
+// Header:
+//  One byte with following flags.
+//  One byte with starttic
+//  One byte with master's maketic (master -> slave only!)
+//  If NCMD_RETRANSMIT set, one byte with retransmitfrom
+//  If NCMD_XTICS set, one byte with number of tics (minus 3, so theoretically up to 258 tics in one packet)
+//  If NCMD_QUITTERS, one byte with number of players followed by one byte with each player's consolenum
+//  If NCMD_MULTI, one byte with number of players followed by one byte with each player's consolenum
+//     - The first player's consolenum is not included in this list, because it always matches the sender
+//
+// For each tic:
+//  Two bytes with consistancy check, followed by tic data
+//
+// Setup packets are different, and are described just before D_ArbitrateNetStart().
+
+#define NCMD_EXIT				0x80
+#define NCMD_RETRANSMIT 		0x40
+#define NCMD_SETUP				0x20
+#define NCMD_MULTI				0x10		// multiple players in this packet
+#define NCMD_QUITTERS			0x08		// one or more players just quit (packet server only)
+#define NCMD_COMPRESSED			0x04		// remainder of packet is compressed
+
+#define NCMD_XTICS				0x03		// packet contains >2 tics
+#define NCMD_2TICS				0x02		// packet contains 2 tics
+#define NCMD_1TICS				0x01		// packet contains 1 tic
+#define NCMD_0TICS				0x00		// packet contains 0 tics
 
 #endif
-
-
-

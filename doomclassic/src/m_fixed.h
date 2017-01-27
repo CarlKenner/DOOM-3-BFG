@@ -1,53 +1,144 @@
-/*
-===========================================================================
-
-Doom 3 BFG Edition GPL Source Code
-Copyright (C) 1993-2012 id Software LLC, a ZeniMax Media company. 
-
-This file is part of the Doom 3 BFG Edition GPL Source Code ("Doom 3 BFG Edition Source Code").  
-
-Doom 3 BFG Edition Source Code is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-Doom 3 BFG Edition Source Code is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with Doom 3 BFG Edition Source Code.  If not, see <http://www.gnu.org/licenses/>.
-
-In addition, the Doom 3 BFG Edition Source Code is also subject to certain additional terms. You should have received a copy of these additional terms immediately following the terms and conditions of the GNU General Public License which accompanied the Doom 3 BFG Edition Source Code.  If not, please request a copy in writing from id Software at the address below.
-
-If you have questions concerning this license or the applicable additional terms, you may contact in writing id Software LLC, c/o ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
-
-===========================================================================
-*/
+// "Build Engine & Tools" Copyright (c) 1993-1997 Ken Silverman
+// Ken Silverman's official web site: "http://www.advsys.net/ken"
+// See the included license file "BUILDLIC.TXT" for license info.
+//
+// This file is based on pragmas.h from Ken Silverman's original Build
+// source code release and contains routines that were originally
+// inline assembly but are not now.
 
 #ifndef __M_FIXED__
 #define __M_FIXED__
 
+#include <stdlib.h>
+#include "doomtype.h"
 
-#ifdef __GNUG__
-#pragma interface
+#if defined(__GNUC__) && defined(__i386__) && !defined(__clang__)
+#include "gccinlines.h"
+#elif defined(_MSC_VER) && defined(_M_IX86)
+#include "mscinlines.h"
+#else
+#include "basicinlines.h"
 #endif
 
+#include "xs_Float.h"
 
-//
-// Fixed point, 32bit as 16.16.
-//
-#define FRACBITS		16
-#define FRACUNIT		(1<<FRACBITS)
+#define MAKESAFEDIVSCALE(x) \
+	inline SDWORD SafeDivScale##x (SDWORD a, SDWORD b) \
+	{ \
+		if ((DWORD)abs(a) >> (31-x) >= (DWORD)abs (b)) \
+			return (a^b)<0 ? FIXED_MIN : FIXED_MAX; \
+		return DivScale##x (a, b); \
+	}
 
-typedef int fixed_t;
+MAKESAFEDIVSCALE(1)
+MAKESAFEDIVSCALE(2)
+MAKESAFEDIVSCALE(3)
+MAKESAFEDIVSCALE(4)
+MAKESAFEDIVSCALE(5)
+MAKESAFEDIVSCALE(6)
+MAKESAFEDIVSCALE(7)
+MAKESAFEDIVSCALE(8)
+MAKESAFEDIVSCALE(9)
+MAKESAFEDIVSCALE(10)
+MAKESAFEDIVSCALE(11)
+MAKESAFEDIVSCALE(12)
+MAKESAFEDIVSCALE(13)
+MAKESAFEDIVSCALE(14)
+MAKESAFEDIVSCALE(15)
+MAKESAFEDIVSCALE(16)
+MAKESAFEDIVSCALE(17)
+MAKESAFEDIVSCALE(18)
+MAKESAFEDIVSCALE(19)
+MAKESAFEDIVSCALE(20)
+MAKESAFEDIVSCALE(21)
+MAKESAFEDIVSCALE(22)
+MAKESAFEDIVSCALE(23)
+MAKESAFEDIVSCALE(24)
+MAKESAFEDIVSCALE(25)
+MAKESAFEDIVSCALE(26)
+MAKESAFEDIVSCALE(27)
+MAKESAFEDIVSCALE(28)
+MAKESAFEDIVSCALE(29)
+MAKESAFEDIVSCALE(30)
+#undef MAKESAFEDIVSCALE
 
-fixed_t FixedMul	(fixed_t a, fixed_t b);
-fixed_t FixedDiv	(fixed_t a, fixed_t b);
-fixed_t FixedDiv2	(fixed_t a, fixed_t b);
+inline SDWORD SafeDivScale31 (SDWORD a, SDWORD b)
+{
+	if ((DWORD)abs(a) >= (DWORD)abs (b))
+		return (a^b)<0 ? FIXED_MIN : FIXED_MAX;
+	return DivScale31 (a, b);
+}
+
+inline SDWORD SafeDivScale32 (SDWORD a, SDWORD b)
+{
+	if ((DWORD)abs(a) >= (DWORD)abs (b) >> 1)
+		return (a^b)<0 ? FIXED_MIN : FIXED_MAX;
+	return DivScale32 (a, b);
+}
+
+#define FixedMul MulScale16
+#define FixedDiv SafeDivScale16
+
+inline void qinterpolatedown16 (SDWORD *out, DWORD count, SDWORD val, SDWORD delta)
+{
+	if (count & 1)
+	{
+		out[0] = val >> 16;
+		val += delta;
+	}
+	count >>= 1;
+	while (count-- != 0)
+	{
+		int temp = val + delta;
+		out[0] = val >> 16;
+		val = temp + delta;
+		out[1] = temp >> 16;
+		out += 2;
+	}
+}
+
+inline void qinterpolatedown16short (short *out, DWORD count, SDWORD val, SDWORD delta)
+{
+	if (count)
+	{
+		if ((size_t)out & 2)
+		{ // align to dword boundary
+			*out++ = (short)(val >> 16);
+			count--;
+			val += delta;
+		}
+		DWORD *o2 = (DWORD *)out;
+		DWORD c2 = count>>1;
+		while (c2-- != 0)
+		{
+			SDWORD temp = val + delta;
+			*o2++ = (temp & 0xffff0000) | ((DWORD)val >> 16);
+			val = temp + delta;
+		}
+		if (count & 1)
+		{
+			*(short *)o2 = (short)(val >> 16);
+		}
+	}
+}
+
+	//returns num/den, dmval = num%den
+inline SDWORD DivMod (SDWORD num, SDWORD den, SDWORD *dmval)
+{
+	*dmval = num % den;
+	return num / den;
+}
+
+	//returns num%den, dmval = num/den
+inline SDWORD ModDiv (SDWORD num, SDWORD den, SDWORD *dmval)
+{
+	*dmval = num / den;
+	return num % den;
+}
 
 
+#define FLOAT2FIXED(f)		xs_Fix<16>::ToFix(f)
+#define FIXED2FLOAT(f)		((f) / float(65536))
+#define FIXED2DBL(f)		((f) / double(65536))
 
 #endif
-

@@ -1,206 +1,173 @@
-/*
-===========================================================================
+// Emacs style mode select	 -*- C++ -*- 
+//-----------------------------------------------------------------------------
+//
+// $Id:$
+//
+// Copyright (C) 1993-1996 by id Software, Inc.
+//
+// This source is available for distribution and/or modification
+// only under the terms of the DOOM Source Code License as
+// published by id Software. All rights reserved.
+//
+// The source is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// FITNESS FOR A PARTICULAR PURPOSE. See the DOOM Source Code License
+// for more details.
+//
+// $Log:$
+//
+// DESCRIPTION:
+//		Intermission screens.
+//
+//-----------------------------------------------------------------------------
 
-Doom 3 BFG Edition GPL Source Code
-Copyright (C) 1993-2012 id Software LLC, a ZeniMax Media company. 
+// Enhancements by Graf Zahl
 
-This file is part of the Doom 3 BFG Edition GPL Source Code ("Doom 3 BFG Edition Source Code").  
-
-Doom 3 BFG Edition Source Code is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-Doom 3 BFG Edition Source Code is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with Doom 3 BFG Edition Source Code.  If not, see <http://www.gnu.org/licenses/>.
-
-In addition, the Doom 3 BFG Edition Source Code is also subject to certain additional terms. You should have received a copy of these additional terms immediately following the terms and conditions of the GNU General Public License which accompanied the Doom 3 BFG Edition Source Code.  If not, please request a copy in writing from id Software at the address below.
-
-If you have questions concerning this license or the applicable additional terms, you may contact in writing id Software LLC, c/o ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
-
-===========================================================================
-*/
-
-#include "Precompiled.h"
-#include "globaldata.h"
-#include "Main.h"
-#include "sys/sys_session.h"
-#include "sys/sys_signin.h"
-//#include "DoomLeaderboards.h"
-#include "d3xp/Game_local.h"
-
-
+#include <ctype.h>
 #include <stdio.h>
-
-#include "z_zone.h"
 
 #include "m_random.h"
 #include "m_swap.h"
-
 #include "i_system.h"
-
 #include "w_wad.h"
-
 #include "g_game.h"
-
-#include "r_local.h"
+#include "g_level.h"
 #include "s_sound.h"
-
 #include "doomstat.h"
-
-// Data.
-#include "sounds.h"
-
-// Needs access to LFB.
 #include "v_video.h"
-
+#include "i_video.h"
 #include "wi_stuff.h"
+#include "c_console.h"
+#include "hu_stuff.h"
+#include "v_palette.h"
+#include "s_sndseq.h"
+#include "sc_man.h"
+#include "v_text.h"
+#include "gi.h"
+#include "d_player.h"
+#include "d_netinf.h"
+#include "b_bot.h"
+#include "textures/textures.h"
+#include "r_data/r_translate.h"
+#include "templates.h"
+#include "gstrings.h"
+
+// States for the intermission
+typedef enum
+{
+	NoState = -1,
+	StatCount,
+	ShowNextLoc,
+	LeavingIntermission
+} stateenum_t;
+
+CVAR (Bool, wi_percents, true, CVAR_ARCHIVE)
+CVAR (Bool, wi_showtotaltime, true, CVAR_ARCHIVE)
+CVAR (Bool, wi_noautostartmap, false, CVAR_USERINFO|CVAR_ARCHIVE)
+CVAR (Int, wi_autoadvance, 0, CVAR_SERVERINFO)
 
 
-//
-// Data needed to add patches to full screen intermission pics.
-// Patches are statistics messages, and animations.
-// Loads of by-pixel layout and placement, offsets etc.
-//
-
-
-//
-// Different vetween registered DOOM (1994) and
-//  Ultimate DOOM - Final edition (retail, 1995?).
-// This is supposedly ignored for commercial
-//  release (aka DOOM II), which had 34 maps
-//  in one episode. So there.
-
-
-// in tics
-//U #define PAUSELEN		(TICRATE*2) 
-//U #define SCORESTEP		100
-//U #define ANIMPERIOD		32
-// pixel distance from "(YOU)" to "PLAYER N"
-//U #define STARDIST		10 
-//U #define WK 1
-
+void WI_loadData ();
+void WI_unloadData ();
 
 // GLOBAL LOCATIONS
+#define WI_TITLEY				2
+#define WI_SPACINGY 			33
 
 // SINGPLE-PLAYER STUFF
+#define SP_STATSX				50
+#define SP_STATSY				50
 
+#define SP_TIMEX				8
+#define SP_TIMEY				(200-32)
 
 
 // NET GAME STUFF
+#define NG_STATSY				50
+#define NG_STATSX				(32 + star->GetScaledWidth()/2 + 32*!dofrags)
 
+#define NG_SPACINGX 			64
 
 
 // DEATHMATCH STUFF
+#define DM_MATRIXX				42
+#define DM_MATRIXY				68
+
+#define DM_SPACINGX 			40
+
+#define DM_TOTALSX				269
+
+#define DM_KILLERSX 			10
+#define DM_KILLERSY 			100
+#define DM_VICTIMSX 			5
+#define DM_VICTIMSY 			50
+
+// These animation variables, structures, etc. are used for the
+// DOOM/Ultimate DOOM intermission screen animations.  This is
+// totally different from any sprite or texture/flat animations
+typedef enum
+{
+	ANIM_ALWAYS,	// determined by patch entry
+	ANIM_PIC,		// continuous
+
+	// condition bitflags
+	ANIM_IFVISITED=8,
+	ANIM_IFNOTVISITED=16,
+	ANIM_IFENTERING=32,
+	ANIM_IFNOTENTERING=64,
+	ANIM_IFLEAVING=128,
+	ANIM_IFNOTLEAVING=256,
+	ANIM_IFTRAVELLING=512,
+	ANIM_IFNOTTRAVELLING=1024,
+
+	ANIM_TYPE=7,
+	ANIM_CONDITION=~7,
+		
+} animenum_t;
+
+struct yahpt_t
+{
+	int x, y;
+};
+
+struct lnode_t
+{
+	int   x;       // x/y coordinate pair structure
+	int   y;
+	char level[9];
+} ;
 
 
-
-
-
-
-
-
+#define FACEBACKOFS 4
 
 
 //
 // Animation.
 // There is another anim_t used in p_spec.
+// (which is why I have renamed this one!)
 //
 
-
-const point_t lnodes[NUMEPISODES][NUMMAPS] =
+#define MAX_ANIMATION_FRAMES 20
+struct in_anim_t
 {
-    // Episode 0 World Map
-    {
-	{ 185, 164 },	// location of level 0 (CJ)
-	{ 148, 143 },	// location of level 1 (CJ)
-	{ 69, 122 },	// location of level 2 (CJ)
-	{ 209, 102 },	// location of level 3 (CJ)
-	{ 116, 89 },	// location of level 4 (CJ)
-	{ 166, 55 },	// location of level 5 (CJ)
-	{ 71, 56 },	// location of level 6 (CJ)
-	{ 135, 29 },	// location of level 7 (CJ)
-	{ 71, 24 }	// location of level 8 (CJ)
-    },
+	int			type;	// Made an int so I can use '|'
+	int 		period;	// period in tics between animations
+	int 		nanims;	// number of animation frames
+	yahpt_t 	loc;	// location of animation
+	int 		data;	// ALWAYS: n/a, RANDOM: period deviation (<256)
+	FTexture *	p[MAX_ANIMATION_FRAMES];	// actual graphics for frames of animations
 
-    // Episode 1 World Map should go here
-    {
-	{ 254, 25 },	// location of level 0 (CJ)
-	{ 97, 50 },	// location of level 1 (CJ)
-	{ 188, 64 },	// location of level 2 (CJ)
-	{ 128, 78 },	// location of level 3 (CJ)
-	{ 214, 92 },	// location of level 4 (CJ)
-	{ 133, 130 },	// location of level 5 (CJ)
-	{ 208, 136 },	// location of level 6 (CJ)
-	{ 148, 140 },	// location of level 7 (CJ)
-	{ 235, 158 }	// location of level 8 (CJ)
-    },
-
-    // Episode 2 World Map should go here
-    {
-	{ 156, 168 },	// location of level 0 (CJ)
-	{ 48, 154 },	// location of level 1 (CJ)
-	{ 174, 95 },	// location of level 2 (CJ)
-	{ 265, 75 },	// location of level 3 (CJ)
-	{ 130, 48 },	// location of level 4 (CJ)
-	{ 279, 23 },	// location of level 5 (CJ)
-	{ 198, 48 },	// location of level 6 (CJ)
-	{ 140, 25 },	// location of level 7 (CJ)
-	{ 281, 136 }	// location of level 8 (CJ)
-    }
-
+	// following must be initialized to zero before use!
+	int 		nexttic;	// next value of bcnt (used in conjunction with period)
+	int 		ctr;		// next frame number to animate
+	int 		state;		// used by RANDOM and LEVEL when animating
+	
+	char		levelname[9];
+	char		levelname2[9];
 };
 
-
-//
-// Animation locations for episode 0 (1).
-// Using patches saves a lot of space,
-//  as they replace 320x200 full screen frames.
-//
-extern const anim_t temp_epsd0animinfo[10];
-const anim_t temp_epsd0animinfo[10] =
-{
-    { ANIM_ALWAYS, TICRATE/3, 3, { 224, 104 } },
-    { ANIM_ALWAYS, TICRATE/3, 3, { 184, 160 } },
-    { ANIM_ALWAYS, TICRATE/3, 3, { 112, 136 } },
-    { ANIM_ALWAYS, TICRATE/3, 3, { 72, 112 } },
-    { ANIM_ALWAYS, TICRATE/3, 3, { 88, 96 } },
-    { ANIM_ALWAYS, TICRATE/3, 3, { 64, 48 } },
-    { ANIM_ALWAYS, TICRATE/3, 3, { 192, 40 } },
-    { ANIM_ALWAYS, TICRATE/3, 3, { 136, 16 } },
-    { ANIM_ALWAYS, TICRATE/3, 3, { 80, 16 } },
-    { ANIM_ALWAYS, TICRATE/3, 3, { 64, 24 } }
-};
-
-extern const anim_t temp_epsd1animinfo[9];
-const anim_t temp_epsd1animinfo[9] =
-{
-    { ANIM_LEVEL, TICRATE/3, 1, { 128, 136 }, 1 },
-    { ANIM_LEVEL, TICRATE/3, 1, { 128, 136 }, 2 },
-    { ANIM_LEVEL, TICRATE/3, 1, { 128, 136 }, 3 },
-    { ANIM_LEVEL, TICRATE/3, 1, { 128, 136 }, 4 },
-    { ANIM_LEVEL, TICRATE/3, 1, { 128, 136 }, 5 },
-    { ANIM_LEVEL, TICRATE/3, 1, { 128, 136 }, 6 },
-    { ANIM_LEVEL, TICRATE/3, 1, { 128, 136 }, 7 },
-    { ANIM_LEVEL, TICRATE/3, 3, { 192, 144 }, 8 },
-    { ANIM_LEVEL, TICRATE/3, 1, { 128, 136 }, 8 }
-};
-
-extern const anim_t temp_epsd2animinfo[6];
-const anim_t temp_epsd2animinfo[6] =
-{
-    { ANIM_ALWAYS, TICRATE/3, 3, { 104, 168 } },
-    { ANIM_ALWAYS, TICRATE/3, 3, { 40, 136 } },
-    { ANIM_ALWAYS, TICRATE/3, 3, { 160, 96 } },
-    { ANIM_ALWAYS, TICRATE/3, 3, { 104, 80 } },
-    { ANIM_ALWAYS, TICRATE/3, 3, { 120, 32 } },
-    { ANIM_ALWAYS, TICRATE/4, 3, { 40, 0 } }
-};
+static TArray<lnode_t> lnodes;
+static TArray<in_anim_t> anims;
 
 
 //
@@ -213,1544 +180,2005 @@ const anim_t temp_epsd2animinfo[6] =
 
 
 // States for single-player
+#define SP_KILLS				0
+#define SP_ITEMS				2
+#define SP_SECRET				4
+#define SP_FRAGS				6 
+#define SP_TIME 				8 
+#define SP_PAR					ST_TIME
 
+#define SP_PAUSE				1
 
-// in seconds
-//#define SHOWLASTLOCDELAY	SHOWNEXTLOCDELAY
+#define SHOWNEXTLOCDELAY		4			// in seconds
 
-
-// used to accelerate or skip a stage
-
-// ::g->wbs->pnum
-
- // specifies current ::g->state
-
-// contains information passed into intermission
-
-const wbplayerstruct_t* plrs;  // ::g->wbs->plyr[]
-
-// used for general timing
-
-// used for timing of background animation
-
-// signals to refresh everything for one frame
-
-
-// # of commercial levels
-
+static int				acceleratestage;	// used to accelerate or skip a stage
+static bool				playerready[MAXPLAYERS];
+static int				me;					// wbs->pnum
+static stateenum_t		state;				// specifies current state
+static wbstartstruct_t *wbs;				// contains information passed into intermission
+static wbplayerstruct_t*plrs;				// wbs->plyr[]
+static int				cnt;				// used for general timing
+static int				bcnt;				// used for timing of background animation
+static int				cnt_kills[MAXPLAYERS];
+static int				cnt_items[MAXPLAYERS];
+static int				cnt_secret[MAXPLAYERS];
+static int				cnt_frags[MAXPLAYERS];
+static int				cnt_deaths[MAXPLAYERS];
+static int				cnt_time;
+static int				cnt_total_time;
+static int				cnt_par;
+static int				cnt_pause;
+static int				total_frags;
+static int				total_deaths;
+static bool				noautostartmap;
+static int				dofrags;
+static int				ng_state;
 
 //
-//	GRAPHICS
+//		GRAPHICS
 //
 
+struct FPatchInfo
+{
+	FFont *mFont;
+	FTexture *mPatch;
+	EColorRange mColor;
+
+	void Init(FGIFont &gifont)
+	{
+		if (gifont.color == NAME_Null)
+		{
+			mPatch = TexMan[gifont.fontname];	// "entering"
+			mColor = mPatch == NULL? CR_UNTRANSLATED : CR_UNDEFINED;
+			mFont = NULL;
+		}
+		else
+		{
+			mFont = V_GetFont(gifont.fontname);
+			mColor = V_FindFontColor(gifont.color);
+			mPatch = NULL;
+		}
+		if (mFont == NULL)
+		{
+			mFont = BigFont;
+		}
+	}
+};
+
+static FPatchInfo mapname;
+static FPatchInfo finished;
+static FPatchInfo entering;
+
+static TArray<FTexture *> yah; 		// You Are Here graphic
+static FTexture* 		splat;		// splat
+static FTexture* 		sp_secret;	// "secret"
+static FTexture* 		kills;		// "Kills", "Scrt", "Items", "Frags"
+static FTexture* 		secret;
+static FTexture* 		items;
+static FTexture* 		frags;
+static FTexture* 		timepic;	// Time sucks.
+static FTexture* 		par;
+static FTexture* 		sucks;
+static FTexture* 		killers;	// "killers", "victims"
+static FTexture* 		victims;
+static FTexture* 		total;		// "Total", your face, your dead face
+//static FTexture* 		star;
+//static FTexture* 		bstar;
+static FTexture* 		p;			// Player graphic
+static FTexture*		lnames[2];	// Name graphics of each level (centered)
+
+// [RH] Info to dynamically generate the level name graphics
+static FString			lnametexts[2];
+
+static FTexture			*background;
 
 //
 // CODE
 //
 
+// ====================================================================
+//
+// Background script commands
+//
+// ====================================================================
 
+static const char *WI_Cmd[]={
+	"Background",
+	"Splat",
+	"Pointer",
+	"Spots",
 
-void localCalculateAchievements(bool epComplete)
+	"IfEntering",
+	"IfNotEntering",
+	"IfVisited",
+	"IfNotVisited",
+	"IfLeaving",
+	"IfNotLeaving",
+	"IfTravelling",
+	"IfNotTravelling",
+
+	"Animation",
+	"Pic",
+
+	"NoAutostartMap",
+
+	NULL
+};
+
+//====================================================================
+// 
+//	Loads the background - either from a single texture
+//	or an intermission lump.
+//	Unfortunately the texture manager is incapable of recognizing text
+//	files so if you use a script you have to prefix its name by '$' in 
+//  MAPINFO.
+//
+//====================================================================
+static bool IsExMy(const char * name)
 {
-
-	if( !common->IsMultiplayer() ) {
-
-			player_t  *player = &::g->players[::g->consoleplayer];
-
-			// Calculate Any Achievements earned from stat cumulation.
-			idAchievementManager::CheckDoomClassicsAchievements( player->killcount, player->itemcount, player->secretcount, ::g->gameskill, ::g->gamemission, ::g->gamemap, ::g->gameepisode, ::g->totalkills, ::g->totalitems, ::g->totalsecret );
-
-
-	}
+	// Only check for the first 3 episodes. They are the only ones with default intermission scripts.
+	// Level names can be upper- and lower case so use tolower to check!
+	return (tolower(name[0])=='e' && name[1]>='1' && name[1]<='3' && tolower(name[2])=='m');
 }
 
-// slam background
-// UNUSED static unsigned char *background=0;
-
-
-void WI_slamBackground(void)
+void WI_LoadBackground(bool isenterpic)
 {
-    memcpy(::g->screens[0], ::g->screens[1], SCREENWIDTH * SCREENHEIGHT);
-    V_MarkRect (0, 0, SCREENWIDTH, SCREENHEIGHT);
-}
+	const char *lumpname = NULL;
+	char buffer[10];
+	in_anim_t an;
+	lnode_t pt;
+	FTextureID texture;
 
-// The ticker is used to detect keys
-//  because of timing issues in netgames.
-qboolean WI_Responder(event_t* ev)
-{
-    return false;
-}
+	bcnt=0;
 
-// Draws "<Levelname> Finished!"
-void WI_drawLF(void)
-{
-    int y = WI_TITLEY;
-
-    // draw <LevelName> 
-	V_DrawPatch((ORIGINAL_WIDTH - SHORT(::g->lnames[::g->wbs->last]->width))/2,
-		y, FB, ::g->lnames[::g->wbs->last]);
-
-    // draw "Finished!"
-    y += (5*SHORT(::g->lnames[::g->wbs->last]->height))/4;
-    
-    V_DrawPatch((ORIGINAL_WIDTH - SHORT(::g->finished->width))/2,
-		y, FB, ::g->finished);
-}
-
-
-
-// Draws "Entering <LevelName>"
-void WI_drawEL(void)
-{
-    int y = WI_TITLEY;
-
-    // draw "Entering"
-    V_DrawPatch((ORIGINAL_WIDTH - SHORT(::g->entering->width))/2,
-		y, FB, ::g->entering);
-
-    // draw level
-    y += (5*SHORT(::g->lnames[::g->wbs->next]->height))/4;
-
-    V_DrawPatch((ORIGINAL_WIDTH - SHORT(::g->lnames[::g->wbs->next]->width))/2,
-		y, FB, ::g->lnames[::g->wbs->next]);
-
-}
-
-void
-WI_drawOnLnode
-( int		n,
-  patch_t*	c[] )
-{
-
-    int		i;
-    int		left;
-    int		top;
-    int		right;
-    int		bottom;
-    qboolean	fits = false;
-
-    i = 0;
-    do
-    {
-	left = lnodes[::g->wbs->epsd][n].x - SHORT(c[i]->leftoffset);
-	top = lnodes[::g->wbs->epsd][n].y - SHORT(c[i]->topoffset);
-	right = left + SHORT(c[i]->width);
-	bottom = top + SHORT(c[i]->height);
-
-	if (left >= 0
-	    && right < SCREENWIDTH
-	    && top >= 0
-	    && bottom < SCREENHEIGHT)
+	texture.SetInvalid();
+	if (isenterpic)
 	{
-	    fits = true;
+		level_info_t * li = FindLevelInfo(wbs->next);
+		if (li != NULL) lumpname = li->EnterPic;
 	}
 	else
 	{
-	    i++;
+		lumpname = level.info->ExitPic;
 	}
-    } while (!fits && i!=2);
 
-    if (fits && i<2)
-    {
-	V_DrawPatch(lnodes[::g->wbs->epsd][n].x, lnodes[::g->wbs->epsd][n].y,
-		    FB, c[i]);
-    }
-    else
-    {
-	// DEBUG
-	I_Printf("Could not place patch on level %d", n+1); 
-    }
-}
-
-
-
-void WI_initAnimatedBack(void)
-{
-    int		i;
-    anim_t*	a;
-
-    if (::g->gamemode == commercial)
-	return;
-
-    if (::g->wbs->epsd > 2)
-	return;
-
-    for (i=0;i < ::g->NUMANIMS[::g->wbs->epsd];i++)
-    {
-		 a = &::g->wi_stuff_anims[::g->wbs->epsd][i];
-
-	// init variables
-	a->ctr = -1;
-
-	// specify the next time to draw it
-	if (a->type == ANIM_ALWAYS)
-	    a->nexttic = ::g->bcnt + 1 + (M_Random()%a->period);
-	else if (a->type == ANIM_RANDOM)
-	    a->nexttic = ::g->bcnt + 1 + a->data2+(M_Random()%a->data1);
-	else if (a->type == ANIM_LEVEL)
-	    a->nexttic = ::g->bcnt + 1;
-    }
-
-}
-
-
-void WI_updateAnimatedBack(void)
-{
-    int		i;
-    anim_t*	a;
-
-    if (::g->gamemode == commercial)
-	return;
-
-    if (::g->wbs->epsd > 2)
-	return;
-
-    for (i=0;i < ::g->NUMANIMS[::g->wbs->epsd];i++)
-    {
-		 a = &::g->wi_stuff_anims[::g->wbs->epsd][i];
-
-	if (::g->bcnt == a->nexttic)
+	// Try to get a default if nothing specified
+	if (lumpname == NULL || lumpname[0]==0) 
 	{
-	    switch (a->type)
-	    {
-	      case ANIM_ALWAYS:
-		if (++a->ctr >= a->nanims) a->ctr = 0;
-		a->nexttic = ::g->bcnt + a->period;
-		break;
+		lumpname = NULL;
+		switch(gameinfo.gametype)
+		{
+		case GAME_Chex:
+		case GAME_Doom:
+			if (!(gameinfo.flags & GI_MAPxx))
+			{
+				const char *level = isenterpic ? wbs->next : wbs->current;
+				if (IsExMy(level))
+				{
+					mysnprintf(buffer, countof(buffer), "$IN_EPI%c", level[1]);
+					lumpname = buffer;
+				}
+			}
+			if (!lumpname) 
+			{
+				if (isenterpic) 
+				{
+					// One special case needs to be handled here!
+					// If going from E1-E3 to E4 the default should be used, not the exit pic.
 
-	      case ANIM_RANDOM:
-		a->ctr++;
-		if (a->ctr == a->nanims)
-		{
-		    a->ctr = -1;
-		    a->nexttic = ::g->bcnt+a->data2+(M_Random()%a->data1);
+					// Not if the exit pic is user defined!
+					if (level.info->ExitPic.IsNotEmpty()) return;
+
+					// E1-E3 need special treatment when playing Doom 1.
+					if (!(gameinfo.flags & GI_MAPxx))
+					{
+						// not if the last level is not from the first 3 episodes
+						if (!IsExMy(wbs->current)) return;
+
+						// not if the next level is one of the first 3 episodes
+						if (IsExMy(wbs->next)) return;
+					}
+				}
+				lumpname = "INTERPIC";
+			}
+			break;
+
+		case GAME_Heretic:
+			if (isenterpic)
+			{
+				if (IsExMy(wbs->next))
+				{
+					mysnprintf(buffer, countof(buffer), "$IN_HTC%c", wbs->next[1]);
+					lumpname = buffer;
+				}
+			}
+			if (!lumpname) 
+			{
+				if (isenterpic) return;
+				lumpname = "FLOOR16";
+			}
+			break;
+
+		case GAME_Hexen:
+			if (isenterpic) return;
+			lumpname = "INTERPIC";
+			break;
+
+		case GAME_Strife:
+		default:
+			// Strife doesn't have an intermission pic so choose something neutral.
+			if (isenterpic) return;
+			lumpname = gameinfo.BorderFlat;
+			break;
 		}
-		else a->nexttic = ::g->bcnt + a->period;
-		break;
-		
-	      case ANIM_LEVEL:
-		// gawd-awful hack for level anims
-		if (!(::g->state == StatCount && i == 7)
-		    && ::g->wbs->next == a->data1)
-		{
-		    a->ctr++;
-		    if (a->ctr == a->nanims) a->ctr--;
-		    a->nexttic = ::g->bcnt + a->period;
-		}
-		break;
-	    }
+	}
+	if (lumpname == NULL)
+	{
+		// shouldn't happen!
+		background = NULL;
+		return;
 	}
 
-    }
+	lnodes.Clear();
+	anims.Clear();
+	yah.Clear();
+	splat = NULL;
 
+	// a name with a starting '$' indicates an intermission script
+	if (*lumpname!='$')
+	{
+		texture = TexMan.CheckForTexture(lumpname, FTexture::TEX_MiscPatch, FTextureManager::TEXMAN_TryAny);
+	}
+	else
+	{
+		int lumpnum=Wads.CheckNumForFullName(lumpname+1, true);
+		if (lumpnum>=0)
+		{
+			FScanner sc(lumpnum);
+			while (sc.GetString())
+			{
+				memset(&an,0,sizeof(an));
+				int caseval = sc.MustMatchString(WI_Cmd);
+				switch(caseval)
+				{
+				case 0:		// Background
+					sc.MustGetString();
+					texture = TexMan.CheckForTexture(sc.String, FTexture::TEX_MiscPatch, FTextureManager::TEXMAN_TryAny);
+					break;
+
+				case 1:		// Splat
+					sc.MustGetString();
+					splat = TexMan[sc.String];
+					break;
+
+				case 2:		// Pointers
+					while (sc.GetString() && !sc.Crossed)
+					{
+						yah.Push(TexMan[sc.String]);
+					}
+					if (sc.Crossed)
+						sc.UnGet();
+					break;
+
+				case 3:		// Spots
+					sc.MustGetStringName("{");
+					while (!sc.CheckString("}"))
+					{
+						sc.MustGetString();
+						strncpy(pt.level, sc.String,8);
+						pt.level[8] = 0;
+						sc.MustGetNumber();
+						pt.x = sc.Number;
+						sc.MustGetNumber();
+						pt.y = sc.Number;
+						lnodes.Push(pt);
+					}
+					break;
+
+				case 4:		// IfEntering
+					an.type = ANIM_IFENTERING;
+					goto readanimation;
+
+				case 5:		// IfEntering
+					an.type = ANIM_IFNOTENTERING;
+					goto readanimation;
+
+				case 6:		// IfVisited
+					an.type = ANIM_IFVISITED;
+					goto readanimation;
+
+				case 7:		// IfNotVisited
+					an.type = ANIM_IFNOTVISITED;
+					goto readanimation;
+
+				case 8:		// IfLeaving
+					an.type = ANIM_IFLEAVING;
+					goto readanimation;
+				
+				case 9:		// IfNotLeaving
+					an.type = ANIM_IFNOTLEAVING;
+					goto readanimation;
+
+				case 10:	// IfTravelling
+					an.type = ANIM_IFTRAVELLING;
+					sc.MustGetString();
+					strncpy(an.levelname2, sc.String, 8);
+					an.levelname2[8] = 0;
+					goto readanimation;
+
+				case 11:	// IfNotTravelling
+					an.type = ANIM_IFTRAVELLING;
+					sc.MustGetString();
+					strncpy(an.levelname2, sc.String, 8);
+					an.levelname2[8] = 0;
+					goto readanimation;
+
+				case 14:	// NoAutostartMap
+					noautostartmap = true;
+					break;
+
+				readanimation:
+					sc.MustGetString();
+					strncpy(an.levelname, sc.String, 8);
+					an.levelname[8] = 0;
+					sc.MustGetString();
+					caseval=sc.MustMatchString(WI_Cmd);
+
+				default:
+					switch (caseval)
+					{
+					case 12:	// Animation
+						an.type |= ANIM_ALWAYS;
+						sc.MustGetNumber();
+						an.loc.x = sc.Number;
+						sc.MustGetNumber();
+						an.loc.y = sc.Number;
+						sc.MustGetNumber();
+						an.period = sc.Number;
+						an.nexttic = 1 + (M_Random() % an.period);
+						if (sc.GetString())
+						{
+							if (sc.Compare("ONCE"))
+							{
+								an.data = 1;
+							}
+							else
+							{
+								sc.UnGet();
+							}
+						}
+						if (!sc.CheckString("{"))
+						{
+							sc.MustGetString();
+							an.p[an.nanims++] = TexMan[sc.String];
+						}
+						else
+						{
+							while (!sc.CheckString("}"))
+							{
+								sc.MustGetString();
+								if (an.nanims<MAX_ANIMATION_FRAMES)
+									an.p[an.nanims++] = TexMan[sc.String];
+							}
+						}
+						an.ctr = -1;
+						anims.Push(an);
+						break;
+
+					case 13:		// Pic
+						an.type |= ANIM_PIC;
+						sc.MustGetNumber();
+						an.loc.x = sc.Number;
+						sc.MustGetNumber();
+						an.loc.y = sc.Number;
+						sc.MustGetString();
+						an.p[0] = TexMan[sc.String];
+						anims.Push(an);
+						break;
+
+					default:
+						sc.ScriptError("Unknown token %s in intermission script", sc.String);
+					}
+				}
+			}
+		}
+		else 
+		{
+			Printf("Intermission script %s not found!\n", lumpname+1);
+			texture = TexMan.GetTexture("INTERPIC", FTexture::TEX_MiscPatch);
+		}
+	}
+	background=TexMan[texture];
 }
 
-void WI_drawAnimatedBack(void)
+//====================================================================
+// 
+//	made this more generic and configurable through a script
+//	Removed all the ugly special case handling for different game modes
+//
+//====================================================================
+
+void WI_updateAnimatedBack()
 {
-    int			i;
-    anim_t*		a;
+	unsigned int i;
 
-    if (commercial)
-	return;
-
-    if (::g->wbs->epsd > 2)
-	return;
-
-    for (i=0 ; i < ::g->NUMANIMS[::g->wbs->epsd] ; i++)
-    {
-		 a = &::g->wi_stuff_anims[::g->wbs->epsd][i];
-
-	if (a->ctr >= 0)
-	    V_DrawPatch(a->loc.x, a->loc.y, FB, a->p[a->ctr]);
-    }
-
+	for(i=0;i<anims.Size();i++)
+	{
+		in_anim_t * a = &anims[i];
+		switch (a->type & ANIM_TYPE)
+		{
+		case ANIM_ALWAYS:
+			if (bcnt >= a->nexttic)
+			{
+				if (++a->ctr >= a->nanims) 
+				{
+					if (a->data==0) a->ctr = 0;
+					else a->ctr--;
+				}
+				a->nexttic = bcnt + a->period;
+			}
+			break;
+			
+		case ANIM_PIC:
+			a->ctr = 0;
+			break;
+			
+		}
+	}
 }
 
+//====================================================================
+// 
+//	Draws the background including all animations
+//
+//====================================================================
+
+void WI_drawBackground()
+{
+	unsigned int i;
+	double animwidth=320;		// For a flat fill or clear background scale animations to 320x200
+	double animheight=200;
+
+	if (background)
+	{
+		// background
+		if (background->UseType == FTexture::TEX_MiscPatch)
+		{
+			// scale all animations below to fit the size of the base pic
+			// The base pic is always scaled to fit the screen so this allows
+			// placing the animations precisely where they belong on the base pic
+			animwidth = background->GetScaledWidthDouble();
+			animheight = background->GetScaledHeightDouble();
+			screen->FillBorder (NULL);
+			screen->DrawTexture(background, 0, 0, DTA_Fullscreen, true, TAG_DONE);
+		}
+		else 
+		{
+			screen->FlatFill(0, 0, SCREENWIDTH, SCREENHEIGHT, background);
+		}
+	}
+	else 
+	{
+		screen->Clear(0,0, SCREENWIDTH, SCREENHEIGHT, 0, 0);
+	}
+
+	for(i=0;i<anims.Size();i++)
+	{
+		in_anim_t * a = &anims[i];
+		level_info_t * li;
+
+		switch (a->type & ANIM_CONDITION)
+		{
+		case ANIM_IFVISITED:
+			li = FindLevelInfo(a->levelname);
+			if (li == NULL || !(li->flags & LEVEL_VISITED)) continue;
+			break;
+
+		case ANIM_IFNOTVISITED:
+			li = FindLevelInfo(a->levelname);
+			if (li == NULL || (li->flags & LEVEL_VISITED)) continue;
+			break;
+
+			// StatCount means 'leaving' - everything else means 'entering'!
+		case ANIM_IFENTERING:
+			if (state == StatCount || strnicmp(a->levelname, wbs->next, 8)) continue;
+			break;
+
+		case ANIM_IFNOTENTERING:
+			if (state != StatCount && !strnicmp(a->levelname, wbs->next, 8)) continue;
+			break;
+
+		case ANIM_IFLEAVING:
+			if (state != StatCount || strnicmp(a->levelname, wbs->current, 8)) continue;
+			break;
+
+		case ANIM_IFNOTLEAVING:
+			if (state == StatCount && !strnicmp(a->levelname, wbs->current, 8)) continue;
+			break;
+
+		case ANIM_IFTRAVELLING:
+			if (strnicmp(a->levelname2, wbs->current, 8) || strnicmp(a->levelname, wbs->next, 8)) continue;
+			break;
+
+		case ANIM_IFNOTTRAVELLING:
+			if (!strnicmp(a->levelname2, wbs->current, 8) && !strnicmp(a->levelname, wbs->next, 8)) continue;
+			break;
+		}
+		if (a->ctr >= 0)
+			screen->DrawTexture(a->p[a->ctr], a->loc.x, a->loc.y, 
+								DTA_VirtualWidthF, animwidth, DTA_VirtualHeightF, animheight, TAG_DONE);
+	}
+}
+
+
+//====================================================================
+//
+// Draws a single character with a shadow
+//
+//====================================================================
+
+static int WI_DrawCharPatch (FFont *font, int charcode, int x, int y, EColorRange translation=CR_UNTRANSLATED, bool nomove=false)
+{
+	int width;
+	screen->DrawTexture(font->GetChar(charcode, &width), x, y,
+		nomove ? DTA_CleanNoMove : DTA_Clean, true,
+		DTA_ShadowAlpha, (gameinfo.gametype & GAME_DoomChex) ? 0 : FRACUNIT/2,
+		DTA_Translation, font->GetColorTranslation(translation),
+		TAG_DONE);
+	return x - width;
+}
+
+//====================================================================
+//
+// CheckRealHeight
+//
+// Checks the posts in a texture and returns the lowest row (plus one)
+// of the texture that is actually used.
+//
+//====================================================================
+
+int CheckRealHeight(FTexture *tex)
+{
+	const FTexture::Span *span;
+	int maxy = 0, miny = tex->GetHeight();
+
+	for (int i = 0; i < tex->GetWidth(); ++i)
+	{
+		tex->GetColumn(i, &span);
+		while (span->Length != 0)
+		{
+			if (span->TopOffset < miny)
+			{
+				miny = span->TopOffset;
+			}
+			if (span->TopOffset + span->Length > maxy)
+			{
+				maxy = span->TopOffset + span->Length;
+			}
+			span++;
+		}
+	}
+	// Scale maxy before returning it
+	maxy = (maxy << 17) / tex->yScale;
+	maxy = (maxy >> 1) + (maxy & 1);
+	return maxy;
+}
+
+//====================================================================
+//
+// Draws a level name with the big font
+//
+// x is no longer passed as a parameter because the text is now broken into several lines
+// if it is too long
+//
+//====================================================================
+
+int WI_DrawName(int y, FTexture *tex, const char *levelname)
+{
+	// draw <LevelName> 
+	if (tex)
+	{
+		screen->DrawTexture(tex, (screen->GetWidth() - tex->GetScaledWidth()*CleanXfac) /2, y, DTA_CleanNoMove, true, TAG_DONE);
+		int h = tex->GetScaledHeight();
+		if (h > 50)
+		{ // Fix for Deus Vult II and similar wads that decide to make these hugely tall
+		  // patches with vast amounts of empty space at the bottom.
+			h = CheckRealHeight(tex);
+		}
+		return y + (h + BigFont->GetHeight()/4) * CleanYfac;
+	}
+	else 
+	{
+		int i;
+		size_t l;
+		const char *p;
+		int h = 0;
+		int lumph;
+
+		lumph = mapname.mFont->GetHeight() * CleanYfac;
+
+		p = levelname;
+		if (!p) return 0;
+		l = strlen(p);
+		if (!l) return 0;
+
+		FBrokenLines *lines = V_BreakLines(mapname.mFont, screen->GetWidth() / CleanXfac, p);
+
+		if (lines)
+		{
+			for (i = 0; lines[i].Width >= 0; i++)
+			{
+				screen->DrawText(mapname.mFont, mapname.mColor, (SCREENWIDTH - lines[i].Width * CleanXfac) / 2, y + h, 
+					lines[i].Text, DTA_CleanNoMove, true, TAG_DONE);
+				h += lumph;
+			}
+			V_FreeBrokenLines(lines);
+		}
+		return y + h + lumph/4;
+	}
+}
+
+//====================================================================
+//
+// Draws a text, either as patch or as string from the string table
+//
+//====================================================================
+
+int WI_DrawPatchText(int y, FPatchInfo *pinfo, const char *stringname)
+{
+	const char *string = GStrings(stringname);
+	int midx = screen->GetWidth() / 2;
+
+	if (pinfo->mPatch != NULL)
+	{
+		screen->DrawTexture(pinfo->mPatch, midx - pinfo->mPatch->GetScaledWidth()*CleanXfac/2, y, DTA_CleanNoMove, true, TAG_DONE);
+		return y + (pinfo->mPatch->GetScaledHeight() * CleanYfac);
+	}
+	else 
+	{
+		screen->DrawText(pinfo->mFont, pinfo->mColor, midx - pinfo->mFont->StringWidth(string)*CleanXfac/2,
+			y, string, DTA_CleanNoMove, true, TAG_DONE);
+		return y + pinfo->mFont->GetHeight() * CleanYfac;
+	}
+}
+
+
+//====================================================================
+//
+// Draws "<Levelname> Finished!"
+//
+// Either uses the specified patch or the big font
+// A level name patch can be specified for all games now, not just Doom.
+//
+//====================================================================
+
+int WI_drawLF ()
+{
+	int y = WI_TITLEY * CleanYfac;
+
+	y = WI_DrawName(y, wbs->LName0, lnametexts[0]);
+	
+	// Adjustment for different font sizes for map name and 'finished'.
+	y -= ((mapname.mFont->GetHeight() - finished.mFont->GetHeight()) * CleanYfac) / 4;
+
+	// draw "Finished!"
+	if (y < (NG_STATSY - finished.mFont->GetHeight()*3/4) * CleanYfac)
+	{
+		// don't draw 'finished' if the level name is too tall
+		y = WI_DrawPatchText(y, &finished, "WI_FINISHED");
+	}
+	return y;
+}
+
+
+//====================================================================
+//
+// Draws "Entering <LevelName>"
+//
+// Either uses the specified patch or the big font
+// A level name patch can be specified for all games now, not just Doom.
+//
+//====================================================================
+
+void WI_drawEL ()
+{
+	int y = WI_TITLEY * CleanYfac;
+
+	y = WI_DrawPatchText(y, &entering, "WI_ENTERING");
+	y += entering.mFont->GetHeight() * CleanYfac / 4;
+	WI_DrawName(y, wbs->LName1, lnametexts[1]);
+}
+
+
+//====================================================================
+//
+// Draws the splats and the 'You are here' arrows
+//
+//====================================================================
+
+int WI_MapToIndex (const char *map)
+{
+	unsigned int i;
+
+	for (i = 0; i < lnodes.Size(); i++)
+	{
+		if (!strnicmp (lnodes[i].level, map, 8))
+			break;
+	}
+	return i;
+}
+
+
+//====================================================================
+//
+// Draws the splats and the 'You are here' arrows
+//
+//====================================================================
+
+void WI_drawOnLnode( int   n, FTexture * c[] ,int numc)
+{
+	int   i;
+	for(i=0;i<numc;i++)
+	{
+		int            left;
+		int            top;
+		int            right;
+		int            bottom;
+
+
+		right = c[i]->GetScaledWidth();
+		bottom = c[i]->GetScaledHeight();
+		left = lnodes[n].x - c[i]->GetScaledLeftOffset();
+		top = lnodes[n].y - c[i]->GetScaledTopOffset();
+		right += left;
+		bottom += top;
+		
+		if (left >= 0 && right < 320 && top >= 0 && bottom < 200) 
+		{
+			screen->DrawTexture (c[i], lnodes[n].x, lnodes[n].y, DTA_320x200, true, TAG_DONE);
+			break;
+		}
+	} 
+}
+
+//====================================================================
 //
 // Draws a number.
 // If digits > 0, then use that many digits minimum,
-//  otherwise only use as many as necessary.
-// Returns new x position.
+//	otherwise only use as many as necessary.
+// x is the right edge of the number.
+// Returns new x position, that is, the left edge of the number.
 //
-
-int
-WI_drawNum
-( int		x,
-  int		y,
-  int		n,
-  int		digits )
+//====================================================================
+int WI_drawNum (FFont *font, int x, int y, int n, int digits, bool leadingzeros=true, EColorRange translation=CR_UNTRANSLATED)
 {
+	int fontwidth = font->GetCharWidth('3');
+	char text[8];
+	int len;
+	char *text_p;
+	bool nomove = font != IntermissionFont;
 
-    int		fontwidth = SHORT(::g->num[0]->width);
-    int		neg;
-    int		temp;
-
-    if (digits < 0)
-    {
-	if (!n)
+	if (nomove)
 	{
-	    // make variable-length zeros 1 digit long
-	    digits = 1;
+		fontwidth *= CleanXfac;
+	}
+	if (leadingzeros)
+	{
+		len = mysnprintf (text, countof(text), "%0*d", digits, n);
 	}
 	else
 	{
-	    // figure out # of digits in #
-	    digits = 0;
-	    temp = n;
-
-	    while (temp)
-	    {
-		temp /= 10;
-		digits++;
-	    }
+		len = mysnprintf (text, countof(text), "%d", n);
 	}
-    }
+	text_p = text + MIN<int>(len, countof(text)-1);
 
-    neg = n < 0;
-    if (neg)
-	n = -n;
-
-    // if non-number, do not draw it
-    if (n == 1994)
-	return 0;
-
-    // draw the new number
-    while (digits--)
-    {
-	x -= fontwidth;
-	V_DrawPatch(x, y, FB, ::g->num[ n % 10 ]);
-	n /= 10;
-    }
-
-    // draw a minus sign if necessary
-    if (neg)
-	V_DrawPatch(x-=8, y, FB, ::g->wiminus);
-
-    return x;
-
-}
-
-void
-WI_drawPercent
-( int		x,
-  int		y,
-  int		p )
-{
-    if (p < 0)
-	return;
-
-    V_DrawPatch(x, y, FB, ::g->percent);
-    WI_drawNum(x, y, p, -1);
-}
-
-
-
-//
-// Display level completion time and par,
-//  or "sucks" message if overflow.
-//
-void
-WI_drawTime
-( int		x,
-  int		y,
-  int		t )
-{
-
-    int		div;
-    int		n;
-
-    if (t<0)
-	return;
-
-    if (t <= 61*59)
-    {
-	div = 1;
-
-	do
+	while (--text_p >= text)
 	{
-	    n = (t / div) % 60;
-	    x = WI_drawNum(x, y, n, 2) - SHORT(::g->colon->width);
-	    div *= 60;
-
-	    // draw
-	    if (div==60 || t / div)
-		V_DrawPatch(x, y, FB, ::g->colon);
-	    
-	} while (t / div);
-    }
-    else
-    {
-	// "sucks"
-	V_DrawPatch(x - SHORT(::g->sucks->width), y, FB, ::g->sucks); 
-    }
+		// Digits are centered in a box the width of the '3' character.
+		// Other characters (specifically, '-') are right-aligned in their cell.
+		if (*text_p >= '0' && *text_p <= '9')
+		{
+			x -= fontwidth;
+			WI_DrawCharPatch(font, *text_p, x + (fontwidth - font->GetCharWidth(*text_p)) / 2, y, translation, nomove);
+		}
+		else
+		{
+			WI_DrawCharPatch(font, *text_p, x - font->GetCharWidth(*text_p), y, translation, nomove);
+			x -= fontwidth;
+		}
+	}
+	if (len < digits)
+	{
+		x -= fontwidth * (digits - len);
+	}
+	return x;
 }
 
+//====================================================================
+//
+//
+//
+//====================================================================
 
-void WI_End(void)
+void WI_drawPercent (FFont *font, int x, int y, int p, int b, bool show_total=true, EColorRange color=CR_UNTRANSLATED)
 {
-    void WI_unloadData(void);
-    WI_unloadData();
+	if (p < 0)
+		return;
+
+	if (wi_percents)
+	{
+		if (font != IntermissionFont)
+		{
+			x -= font->GetCharWidth('%') * CleanXfac;
+		}
+		else
+		{
+			x -= font->GetCharWidth('%');
+		}
+		screen->DrawText(font, color, x, y, "%", font != IntermissionFont ? DTA_CleanNoMove : DTA_Clean, true, TAG_DONE);
+		if (font != IntermissionFont)
+		{
+			x -= 2*CleanXfac;
+		}
+		WI_drawNum(font, x, y, b == 0 ? 100 : p * 100 / b, -1, false, color);
+	}
+	else
+	{
+		if (show_total)
+		{
+			x = WI_drawNum(font, x, y, b, 2, false);
+			x -= font->GetCharWidth('/');
+			screen->DrawText (IntermissionFont, color, x, y, "/",
+				DTA_Clean, true, TAG_DONE);
+		}
+		WI_drawNum (font, x, y, p, -1, false, color);
+	}
 }
 
-void WI_initNoState(void)
+//====================================================================
+//
+// Display level completion time and par, or "sucks" message if overflow.
+//
+//====================================================================
+void WI_drawTime (int x, int y, int t, bool no_sucks=false)
 {
-    ::g->state = NoState;
-    ::g->acceleratestage = 0;
-    ::g->cnt = 10;
+	bool sucky;
+
+	if (t<0)
+		return;
+
+	sucky = !no_sucks && t >= wbs->sucktime * 60 * 60 && wbs->sucktime > 0;
+
+	if (sucky)
+	{ // "sucks"
+		if (sucks != NULL)
+		{
+			screen->DrawTexture (sucks, x - sucks->GetScaledWidth(), y - IntermissionFont->GetHeight() - 2,
+				DTA_Clean, true, TAG_DONE); 
+		}
+		else
+		{
+			screen->DrawText (BigFont, CR_UNTRANSLATED, x  - BigFont->StringWidth("SUCKS"), y - IntermissionFont->GetHeight() - 2,
+				"SUCKS", DTA_Clean, true, TAG_DONE);
+		}
+	}
+
+	int hours = t / 3600;
+	t -= hours * 3600;
+	int minutes = t / 60;
+	t -= minutes * 60;
+	int seconds = t;
+
+	// Why were these offsets hard coded? Half the WADs with custom patches
+	// I tested screwed up miserably in this function!
+	int num_spacing = IntermissionFont->GetCharWidth('3');
+	int colon_spacing = IntermissionFont->GetCharWidth(':');
+
+	x = WI_drawNum (IntermissionFont, x, y, seconds, 2) - 1;
+	WI_DrawCharPatch (IntermissionFont, ':', x -= colon_spacing, y);
+	x = WI_drawNum (IntermissionFont, x, y, minutes, 2, hours!=0);
+	if (hours)
+	{
+		WI_DrawCharPatch (IntermissionFont, ':', x -= colon_spacing, y);
+		WI_drawNum (IntermissionFont, x, y, hours, 2);
+	}
 }
 
-void WI_updateNoState(void) {
+void WI_End ()
+{
+	state = LeavingIntermission;
+	WI_unloadData ();
 
-    WI_updateAnimatedBack();
+	//Added by mc
+	if (deathmatch)
+	{
+		bglobal.RemoveAllBots (consoleplayer != Net_Arbitrator);
+	}
+}
 
-    if (!--::g->cnt) {
-		// Unload data
+bool WI_autoSkip()
+{
+	return wi_autoadvance > 0 && bcnt > (wi_autoadvance * TICRATE);
+}
+
+void WI_initNoState ()
+{
+	state = NoState;
+	acceleratestage = 0;
+	cnt = 10;
+}
+
+void WI_updateNoState ()
+{
+	WI_updateAnimatedBack();
+
+	if (acceleratestage)
+	{
+		cnt = 0;
+	}
+	else
+	{
+		bool noauto = noautostartmap;
+		bool autoskip = WI_autoSkip();
+
+		for (int i = 0; !noauto && i < MAXPLAYERS; ++i)
+		{
+			if (playeringame[i])
+			{
+				noauto |= players[i].userinfo.GetNoAutostartMap();
+			}
+		}
+		if (!noauto || autoskip)
+		{
+			cnt--;
+		}
+	}
+
+	if (cnt == 0)
+	{
 		WI_End();
 		G_WorldDone();
-    }
-
-	DoomLib::ActivateGame();
-}
-
-
-
-void WI_initShowNextLoc(void)
-{
-    ::g->state = ShowNextLoc;
-    ::g->acceleratestage = 0;
-    ::g->cnt = SHOWNEXTLOCDELAY * TICRATE;
-
-    WI_initAnimatedBack();
-
-	DoomLib::ActivateGame();
-}
-
-void WI_updateShowNextLoc(void)
-{
-    WI_updateAnimatedBack();
-
-    if (!--::g->cnt || ::g->acceleratestage) {
-		WI_initNoState();
-		DoomLib::ShowXToContinue( false );
-	} else {
-		::g->snl_pointeron = (::g->cnt & 31) < 20;
 	}
+}
+
+static bool snl_pointeron = false;
+
+void WI_initShowNextLoc ()
+{
+	if (wbs->next_ep == -1) 
+	{
+		// Last map in episode - there is no next location!
+		WI_End();
+		G_WorldDone();
+		return;
+	}
+
+	state = ShowNextLoc;
+	acceleratestage = 0;
+	cnt = SHOWNEXTLOCDELAY * TICRATE;
+	WI_LoadBackground(true);
+}
+
+void WI_updateShowNextLoc ()
+{
+	WI_updateAnimatedBack();
+
+	if (!--cnt || acceleratestage)
+		WI_initNoState();
+	else
+		snl_pointeron = (cnt & 31) < 20;
 }
 
 void WI_drawShowNextLoc(void)
 {
-
-    int		i;
-    int		last;
-
-    WI_slamBackground();
-
-    // draw animated background
-    WI_drawAnimatedBack(); 
-
-    if ( ::g->gamemode != commercial)
-    {
-  	if (::g->wbs->epsd > 2)
-	{
-	    WI_drawEL();
-	    return;
-	}
+	unsigned int i;
 	
-	last = (::g->wbs->last == 8) ? ::g->wbs->next - 1 : ::g->wbs->last;
+	WI_drawBackground();
 
-	// don't draw any splats for extra secret levels
-	if( last == 9 ) {
-		for (i=0 ; i<MAXPLAYERS ; i++) {
-				::g->players[i].didsecret = false; 
+	if (splat)
+	{
+		for (i=0 ; i<lnodes.Size() ; i++) 
+		{
+			level_info_t * li = FindLevelInfo (lnodes[i].level);
+			if (li && li->flags & LEVEL_VISITED) WI_drawOnLnode(i, &splat,1);  // draw a splat on taken cities.
 		}
-		::g->wbs->didsecret = false;
-		last = -1;
 	}
-
-	// draw a splat on taken cities.
-	for (i=0 ; i<=last ; i++)
-	    WI_drawOnLnode(i, &::g->splat);
-
-	// splat the secret level?
-	if (::g->wbs->didsecret)
-	    WI_drawOnLnode(8, &::g->splat);
-
+		
 	// draw flashing ptr
-	if (::g->snl_pointeron)
-	    WI_drawOnLnode(::g->wbs->next, ::g->yah); 
-    }
-
-    // draws which level you are entering..
-    if ( (::g->gamemode != commercial)
-	 || ::g->wbs->next != 30)
-	WI_drawEL();  
-
-}
-
-void WI_drawNoState(void)
-{
-    ::g->snl_pointeron = true;
-    WI_drawShowNextLoc();
-}
-
-int WI_fragSum(int playernum)
-{
-    int		i;
-    int		frags = 0;
-    
-	for (i=0 ; i<MAXPLAYERS ; i++)
+	if (snl_pointeron && yah.Size())
 	{
-		if (/*::g->playeringame[i] &&*/ i!=playernum)
-		{
-			frags += plrs[playernum].frags[i];
-		}
+		unsigned int v = WI_MapToIndex (wbs->next);
+		// Draw only if it points to a valid level on the current screen!
+		if (v<lnodes.Size()) WI_drawOnLnode (v, &yah[0], yah.Size()); 
 	}
 
+	// draws which level you are entering..
+	WI_drawEL ();  
+
+}
+
+void WI_drawNoState ()
+{
+	snl_pointeron = true;
+	WI_drawShowNextLoc();
+}
+
+int WI_fragSum (int playernum)
+{
+	int i;
+	int frags = 0;
 	
-    // JDC hack - negative frags.
-    frags -= plrs[playernum].frags[playernum];
-    // UNUSED if (frags < 0)
-    // 	frags = 0;
-
-    return frags;
-}
-
-int WI_fragOnlySum(int playernum)
-{
-	int		i;
-	int		frags = 0;
-
-	for (i=0 ; i<MAXPLAYERS ; i++)
+	for (i = 0; i < MAXPLAYERS; i++)
 	{
-		if (/*::g->playeringame[i] &&*/ i!=playernum)
+		if (playeringame[i]
+			&& i!=playernum)
 		{
 			frags += plrs[playernum].frags[i];
 		}
 	}
+		
+	// JDC hack - negative frags.
+	frags -= plrs[playernum].frags[playernum];
 
 	return frags;
 }
 
-int WI_deathSum(int playernum)
+static int player_deaths[MAXPLAYERS];
+
+void WI_initDeathmatchStats (void)
 {
-	int		i;
-	int		deaths = 0;
+	int i, j;
+
+	state = StatCount;
+	acceleratestage = 0;
+	memset(playerready, 0, sizeof(playerready));
+	memset(cnt_frags, 0, sizeof(cnt_frags));
+	memset(cnt_deaths, 0, sizeof(cnt_deaths));
+	memset(player_deaths, 0, sizeof(player_deaths));
+	total_frags = 0;
+	total_deaths = 0;
+
+	ng_state = 1;
+	cnt_pause = TICRATE;
 
 	for (i=0 ; i<MAXPLAYERS ; i++)
 	{
-		if ( 1 /*::g->playeringame[i]*/)
+		if (playeringame[i])
 		{
-			deaths += plrs[i].frags[playernum];
+			for (j = 0; j < MAXPLAYERS; j++)
+				if (playeringame[j])
+					player_deaths[i] += plrs[j].frags[i];
+			total_deaths += player_deaths[i];
+			total_frags += plrs[i].fragcount;
 		}
 	}
-
-	return deaths;
 }
 
-
-
-
-
-
-void WI_initDeathmatchStats(void)
+void WI_updateDeathmatchStats ()
 {
 
-    int		i;
-    int		j;
+	int i;
+	bool stillticking;
+	bool autoskip = WI_autoSkip();
 
-    ::g->state = StatCount;
-    ::g->acceleratestage = 0;
-    ::g->dm_state = 1;
+	WI_updateAnimatedBack();
 
-    ::g->cnt_pause = TICRATE;
-
-    for (i=0 ; i<MAXPLAYERS ; i++)
-    {
-	if (::g->playeringame[i])
+	if ((acceleratestage || autoskip) && ng_state != 6)
 	{
-	    for (j=0 ; j<MAXPLAYERS ; j++)
-		if (::g->playeringame[j])
-		    ::g->dm_frags[i][j] = 0;
+		acceleratestage = 0;
 
-	    ::g->dm_totals[i] = 0;
-	}
-    }
-    
-    WI_initAnimatedBack();
-
-	if ( common->IsMultiplayer() ) {
-		localCalculateAchievements(false);
-
-		/* JAF PS3 
-		gameLocal->liveSession.GetDMSession().SetEndOfMatchStats();
-		gameLocal->liveSession.GetDMSession().WriteTrueskill();
-
-		// Write stats
-		if ( gameLocal->liveSession.IsHost( ::g->consoleplayer ) ) {
-			gameLocal->liveSession.GetDMSession().BeginEndLevel();
-		}
-		*/
-	}
-
-	DoomLib::ShowXToContinue( true );
-}
-
-
-
-void WI_updateDeathmatchStats(void)
-{
-
-    int		i;
-    int		j;
-    
-    qboolean	stillticking;
-
-    WI_updateAnimatedBack();
-
-    if (::g->acceleratestage && ::g->dm_state != 4)
-    {
-	::g->acceleratestage = 0;
-
-	for (i=0 ; i<MAXPLAYERS ; i++)
-	{
-	    if (::g->playeringame[i])
-	    {
-		for (j=0 ; j<MAXPLAYERS ; j++)
-		    if (::g->playeringame[j])
-			::g->dm_frags[i][j] = plrs[i].frags[j];
-
-		::g->dm_totals[i] = WI_fragSum(i);
-	    }
-	}
-	
-
-	S_StartSound(0, sfx_barexp);
-	::g->dm_state = 4;
-    }
-
-    
-    if (::g->dm_state == 2)
-    {
-	if (!(::g->bcnt&3))
-	    S_StartSound(0, sfx_pistol);
-	
-	stillticking = false;
-
-	for (i=0 ; i<MAXPLAYERS ; i++)
-	{
-	    if (::g->playeringame[i])
-	    {
-		for (j=0 ; j<MAXPLAYERS ; j++)
+		for (i = 0; i<MAXPLAYERS; i++)
 		{
-		    if (::g->playeringame[j]
-			&& ::g->dm_frags[i][j] != plrs[i].frags[j])
-		    {
-			if (plrs[i].frags[j] < 0)
-			    ::g->dm_frags[i][j]--;
+			if (!playeringame[i])
+				continue;
+
+			cnt_frags[i] = plrs[i].fragcount;
+			cnt_deaths[i] = player_deaths[i];
+		}
+		S_Sound(CHAN_VOICE | CHAN_UI, "intermission/nextstage", 1, ATTN_NONE);
+		ng_state = 6;
+	}
+
+	if (ng_state == 2)
+	{
+		if (!(bcnt & 3))
+			S_Sound(CHAN_VOICE | CHAN_UI, "intermission/tick", 1, ATTN_NONE);
+
+		stillticking = false;
+
+		for (i = 0; i<MAXPLAYERS; i++)
+		{
+			if (!playeringame[i])
+				continue;
+
+			cnt_frags[i] += 2;
+
+			if (cnt_frags[i] > plrs[i].fragcount)
+				cnt_frags[i] = plrs[i].fragcount;
 			else
-			    ::g->dm_frags[i][j]++;
-
-			if (::g->dm_frags[i][j] > 99)
-			    ::g->dm_frags[i][j] = 99;
-
-			if (::g->dm_frags[i][j] < -99)
-			    ::g->dm_frags[i][j] = -99;
-			
-			stillticking = true;
-		    }
+				stillticking = true;
 		}
-		::g->dm_totals[i] = WI_fragSum(i);
 
-		if (::g->dm_totals[i] > 99)
-		    ::g->dm_totals[i] = 99;
-		
-		if (::g->dm_totals[i] < -99)
-		    ::g->dm_totals[i] = -99;
-	    }
-	    
-	}
-	if (!stillticking)
-	{
-	    S_StartSound(0, sfx_barexp);
-	    ::g->dm_state++;
-	}
-
-    }
-    else if (::g->dm_state == 4)
-    {
-		if (::g->acceleratestage)
+		if (!stillticking)
 		{
-			if ( !::g->demoplayback && ( ::g->usergame || ::g->netgame ) ) {
-					// This sound plays repeatedly after a player continues at the end of a deathmatch,
-					// and sounds bad. Quick fix is to just not play it.
-					//S_StartSound(0, sfx_slop);
+			S_Sound(CHAN_VOICE | CHAN_UI, "intermission/nextstage", 1, ATTN_NONE);
+			ng_state++;
+		}
+	}
+	else if (ng_state == 4)
+	{
+		if (!(bcnt & 3))
+			S_Sound(CHAN_VOICE | CHAN_UI, "intermission/tick", 1, ATTN_NONE);
 
-					DoomLib::HandleEndMatch();
+		stillticking = false;
+
+		for (i = 0; i<MAXPLAYERS; i++)
+		{
+			if (!playeringame[i])
+				continue;
+
+			cnt_deaths[i] += 2;
+			if (cnt_deaths[i] > player_deaths[i])
+				cnt_deaths[i] = player_deaths[i];
+			else
+				stillticking = true;
+		}
+		if (!stillticking)
+		{
+			S_Sound(CHAN_VOICE | CHAN_UI, "intermission/nextstage", 1, ATTN_NONE);
+			ng_state++;
+		}
+	}
+	else if (ng_state == 6)
+	{
+		int i;
+		for (i = 0; i < MAXPLAYERS; i++)
+		{
+			// If the player is in the game and not ready, stop checking
+			if (playeringame[i] && players[i].Bot == NULL && !playerready[i])
+				break;
+		}
+
+		// All players are ready; proceed.
+		if ((i == MAXPLAYERS && acceleratestage) || autoskip)
+		{
+			S_Sound(CHAN_VOICE | CHAN_UI, "intermission/pastdmstats", 1, ATTN_NONE);
+			WI_initShowNextLoc();
+		}
+	}
+	else if (ng_state & 1)
+	{
+		if (!--cnt_pause)
+		{
+			ng_state++;
+			cnt_pause = TICRATE;
+		}
+	}
+}
+
+
+
+void WI_drawDeathmatchStats ()
+{
+	int i, pnum, x, y, ypadding, height, lineheight;
+	int maxnamewidth, maxscorewidth, maxiconheight;
+	int pwidth = IntermissionFont->GetCharWidth('%');
+	int icon_x, name_x, frags_x, deaths_x;
+	int deaths_len;
+	float h, s, v, r, g, b;
+	EColorRange color;
+	const char *text_deaths, *text_frags;
+	FTexture *readyico = TexMan.FindTexture("READYICO");
+	player_t *sortedplayers[MAXPLAYERS];
+
+	// draw animated background
+	WI_drawBackground();
+
+	y = WI_drawLF();
+
+	HU_GetPlayerWidths(maxnamewidth, maxscorewidth, maxiconheight);
+	// Use the readyico height if it's bigger.
+	height = readyico->GetScaledHeight() - readyico->GetScaledTopOffset();
+	maxiconheight = MAX(height, maxiconheight);
+	height = SmallFont->GetHeight() * CleanYfac;
+	lineheight = MAX(height, maxiconheight * CleanYfac);
+	ypadding = (lineheight - height + 1) / 2;
+	y += CleanYfac;
+
+	text_deaths = GStrings("SCORE_DEATHS");
+	//text_color = GStrings("SCORE_COLOR");
+	text_frags = GStrings("SCORE_FRAGS");
+
+	icon_x = 8 * CleanXfac;
+	name_x = icon_x + maxscorewidth * CleanXfac;
+	frags_x = name_x + (maxnamewidth + MAX(SmallFont->StringWidth("XXXXX"), SmallFont->StringWidth(text_frags)) + 8) * CleanXfac;
+	deaths_x = frags_x + ((deaths_len = SmallFont->StringWidth(text_deaths)) + 8) * CleanXfac;
+
+	x = (SCREENWIDTH - deaths_x) >> 1;
+	icon_x += x;
+	name_x += x;
+	frags_x += x;
+	deaths_x += x;
+
+	color = (gameinfo.gametype & GAME_Raven) ? CR_GREEN : CR_UNTRANSLATED;
+
+	screen->DrawText(SmallFont, color, name_x, y, GStrings("SCORE_NAME"), DTA_CleanNoMove, true, TAG_DONE);
+	screen->DrawText(SmallFont, color, frags_x - SmallFont->StringWidth(text_frags)*CleanXfac, y, text_frags, DTA_CleanNoMove, true, TAG_DONE);
+	screen->DrawText(SmallFont, color, deaths_x - deaths_len*CleanXfac, y, text_deaths, DTA_CleanNoMove, true, TAG_DONE);
+	y += height + 6 * CleanYfac;
+
+	// Sort all players
+	for (i = 0; i < MAXPLAYERS; i++)
+	{
+		sortedplayers[i] = &players[i];
+	}
+
+	if (teamplay)
+		qsort(sortedplayers, MAXPLAYERS, sizeof(player_t *), compareteams);
+	else
+		qsort(sortedplayers, MAXPLAYERS, sizeof(player_t *), comparepoints);
+
+	// Draw lines for each player
+	for (i = 0; i < MAXPLAYERS; i++)
+	{
+		player_t *player = sortedplayers[i];
+		pnum = int(player - players);
+
+		if (!playeringame[pnum])
+			continue;
+
+		D_GetPlayerColor(pnum, &h, &s, &v, NULL);
+		HSVtoRGB(&r, &g, &b, h, s, v);
+
+		screen->Dim(MAKERGB(clamp(int(r*255.f), 0, 255), 
+			clamp(int(g*255.f), 0, 255), 
+			clamp(int(b*255.f), 0, 255)), 0.8f, x, y - ypadding, (deaths_x - x) + (8 * CleanXfac), lineheight);
+
+		if (playerready[pnum] || player->Bot != NULL) // Bots are automatically assumed ready, to prevent confusion
+			screen->DrawTexture(readyico, x - (readyico->GetWidth() * CleanXfac), y, DTA_CleanNoMove, true, TAG_DONE);
+
+		color = (EColorRange)HU_GetRowColor(player, pnum == consoleplayer);
+		if (player->mo->ScoreIcon.isValid())
+		{
+			FTexture *pic = TexMan[player->mo->ScoreIcon];
+			screen->DrawTexture(pic, icon_x, y, DTA_CleanNoMove, true, TAG_DONE);
+		}
+		screen->DrawText(SmallFont, color, name_x, y + ypadding, player->userinfo.GetName(), DTA_CleanNoMove, true, TAG_DONE);
+		WI_drawNum(SmallFont, frags_x, y + ypadding, cnt_frags[pnum], 0, false, color);
+		if (ng_state >= 2)
+		{
+			WI_drawNum(SmallFont, deaths_x, y + ypadding, cnt_deaths[pnum], 0, false, color);
+		}
+		y += lineheight + CleanYfac;
+	}
+
+	// Draw "TOTAL" line
+	y += height + 3 * CleanYfac;
+	color = (gameinfo.gametype & GAME_Raven) ? CR_GREEN : CR_UNTRANSLATED;
+	screen->DrawText(SmallFont, color, name_x, y, GStrings("SCORE_TOTAL"), DTA_CleanNoMove, true, TAG_DONE);
+	WI_drawNum(SmallFont, frags_x, y, total_frags, 0, false, color);
+	if (ng_state >= 4)
+	{
+		WI_drawNum(SmallFont, deaths_x, y, total_deaths, 0, false, color);
+	}
+
+	// Draw game time
+	y += height + CleanYfac;
+
+	int seconds = Tics2Seconds(plrs[me].stime);
+	int hours = seconds / 3600;
+	int minutes = (seconds % 3600) / 60;
+	seconds = seconds % 60;
+
+	FString leveltime = GStrings("SCORE_LVLTIME");
+	leveltime += ": ";
+
+	char timer[sizeof "HH:MM:SS"];
+	mysnprintf(timer, sizeof(timer), "%02i:%02i:%02i", hours, minutes, seconds);
+	leveltime += timer;
+
+	screen->DrawText(SmallFont, color, x, y, leveltime, DTA_CleanNoMove, true, TAG_DONE);
+}
+
+void WI_initNetgameStats ()
+{
+
+	int i;
+
+	state = StatCount;
+	acceleratestage = 0;
+	memset(playerready, 0, sizeof(playerready));
+	ng_state = 1;
+
+	cnt_pause = TICRATE;
+
+	for (i = 0; i < MAXPLAYERS; i++)
+	{
+		if (!playeringame[i])
+			continue;
+
+		cnt_kills[i] = cnt_items[i] = cnt_secret[i] = cnt_frags[i] = 0;
+
+		dofrags += WI_fragSum (i);
+	}
+
+	dofrags = !!dofrags;
+}
+
+void WI_updateNetgameStats ()
+{
+
+	int i;
+	int fsum;
+	bool stillticking;
+	bool autoskip = WI_autoSkip();
+
+	WI_updateAnimatedBack ();
+
+	if ((acceleratestage || autoskip) && ng_state != 10)
+	{
+		acceleratestage = 0;
+
+		for (i=0 ; i<MAXPLAYERS ; i++)
+		{
+			if (!playeringame[i])
+				continue;
+
+			cnt_kills[i] = plrs[i].skills;
+			cnt_items[i] = plrs[i].sitems;
+			cnt_secret[i] = plrs[i].ssecret;
+
+			if (dofrags)
+				cnt_frags[i] = WI_fragSum (i);
+		}
+		S_Sound (CHAN_VOICE | CHAN_UI, "intermission/nextstage", 1, ATTN_NONE);
+		ng_state = 10;
+	}
+
+	if (ng_state == 2)
+	{
+		if (!(bcnt&3))
+			S_Sound (CHAN_VOICE | CHAN_UI, "intermission/tick", 1, ATTN_NONE);
+
+		stillticking = false;
+
+		for (i=0 ; i<MAXPLAYERS ; i++)
+		{
+			if (!playeringame[i])
+				continue;
+
+			cnt_kills[i] += 2;
+
+			if (cnt_kills[i] > plrs[i].skills)
+				cnt_kills[i] = plrs[i].skills;
+			else
+				stillticking = true;
+		}
+		
+		if (!stillticking)
+		{
+			S_Sound (CHAN_VOICE | CHAN_UI, "intermission/nextstage", 1, ATTN_NONE);
+			ng_state++;
+		}
+	}
+	else if (ng_state == 4)
+	{
+		if (!(bcnt&3))
+			S_Sound (CHAN_VOICE | CHAN_UI, "intermission/tick", 1, ATTN_NONE);
+
+		stillticking = false;
+
+		for (i=0 ; i<MAXPLAYERS ; i++)
+		{
+			if (!playeringame[i])
+				continue;
+
+			cnt_items[i] += 2;
+			if (cnt_items[i] > plrs[i].sitems)
+				cnt_items[i] = plrs[i].sitems;
+			else
+				stillticking = true;
+		}
+		if (!stillticking)
+		{
+			S_Sound (CHAN_VOICE | CHAN_UI, "intermission/nextstage", 1, ATTN_NONE);
+			ng_state++;
+		}
+	}
+	else if (ng_state == 6)
+	{
+		if (!(bcnt&3))
+			S_Sound (CHAN_VOICE | CHAN_UI, "intermission/tick", 1, ATTN_NONE);
+
+		stillticking = false;
+
+		for (i=0 ; i<MAXPLAYERS ; i++)
+		{
+			if (!playeringame[i])
+				continue;
+
+			cnt_secret[i] += 2;
+
+			if (cnt_secret[i] > plrs[i].ssecret)
+				cnt_secret[i] = plrs[i].ssecret;
+			else
+				stillticking = true;
+		}
+		
+		if (!stillticking)
+		{
+			S_Sound (CHAN_VOICE | CHAN_UI, "intermission/nextstage", 1, ATTN_NONE);
+			ng_state += 1 + 2*!dofrags;
+		}
+	}
+	else if (ng_state == 8)
+	{
+		if (!(bcnt&3))
+			S_Sound (CHAN_VOICE | CHAN_UI, "intermission/tick", 1, ATTN_NONE);
+
+		stillticking = false;
+
+		for (i=0 ; i<MAXPLAYERS ; i++)
+		{
+			if (!playeringame[i])
+				continue;
+
+			cnt_frags[i] += 1;
+
+			if (cnt_frags[i] >= (fsum = WI_fragSum(i)))
+				cnt_frags[i] = fsum;
+			else
+				stillticking = true;
+		}
+		
+		if (!stillticking)
+		{
+			S_Sound (CHAN_VOICE | CHAN_UI, "intermission/cooptotal", 1, ATTN_NONE);
+			ng_state++;
+		}
+	}
+	else if (ng_state == 10)
+	{
+		int i;
+		for (i = 0; i < MAXPLAYERS; i++)
+		{
+			// If the player is in the game and not ready, stop checking
+			if (playeringame[i] && players[i].Bot == NULL && !playerready[i])
+				break;
+		}
+
+		// All players are ready; proceed.
+		if ((i == MAXPLAYERS && acceleratestage) || autoskip)
+		{
+			S_Sound (CHAN_VOICE | CHAN_UI, "intermission/pastcoopstats", 1, ATTN_NONE);
+			WI_initShowNextLoc();
+		}
+	}
+	else if (ng_state & 1)
+	{
+		if (!--cnt_pause)
+		{
+			ng_state++;
+			cnt_pause = TICRATE;
+		}
+	}
+}
+
+void WI_drawNetgameStats ()
+{
+	int i, x, y, ypadding, height, lineheight;
+	int maxnamewidth, maxscorewidth, maxiconheight;
+	int pwidth = IntermissionFont->GetCharWidth('%');
+	int icon_x, name_x, kills_x, bonus_x, secret_x;
+	int bonus_len, secret_len;
+	int missed_kills, missed_items, missed_secrets;
+	float h, s, v, r, g, b;
+	EColorRange color;
+	const char *text_bonus, *text_secret, *text_kills;
+	FTexture *readyico = TexMan.FindTexture("READYICO");
+
+	// draw animated background
+	WI_drawBackground(); 
+
+	y = WI_drawLF();
+
+	HU_GetPlayerWidths(maxnamewidth, maxscorewidth, maxiconheight);
+	// Use the readyico height if it's bigger.
+	height = readyico->GetScaledHeight() - readyico->GetScaledTopOffset();
+	if (height > maxiconheight)
+	{
+		maxiconheight = height;
+	}
+	height = SmallFont->GetHeight() * CleanYfac;
+	lineheight = MAX(height, maxiconheight * CleanYfac);
+	ypadding = (lineheight - height + 1) / 2;
+	y += CleanYfac;
+
+	text_bonus = GStrings((gameinfo.gametype & GAME_Raven) ? "SCORE_BONUS" : "SCORE_ITEMS");
+	text_secret = GStrings("SCORE_SECRET");
+	text_kills = GStrings("SCORE_KILLS");
+
+	icon_x = 8 * CleanXfac;
+	name_x = icon_x + maxscorewidth * CleanXfac;
+	kills_x = name_x + (maxnamewidth + MAX(SmallFont->StringWidth("XXXXX"), SmallFont->StringWidth(text_kills)) + 8) * CleanXfac;
+	bonus_x = kills_x + ((bonus_len = SmallFont->StringWidth(text_bonus)) + 8) * CleanXfac;
+	secret_x = bonus_x + ((secret_len = SmallFont->StringWidth(text_secret)) + 8) * CleanXfac;
+
+	x = (SCREENWIDTH - secret_x) >> 1;
+	icon_x += x;
+	name_x += x;
+	kills_x += x;
+	bonus_x += x;
+	secret_x += x;
+
+	color = (gameinfo.gametype & GAME_Raven) ? CR_GREEN : CR_UNTRANSLATED;
+
+	screen->DrawText(SmallFont, color, name_x, y, GStrings("SCORE_NAME"), DTA_CleanNoMove, true, TAG_DONE);
+	screen->DrawText(SmallFont, color, kills_x - SmallFont->StringWidth(text_kills)*CleanXfac, y, text_kills, DTA_CleanNoMove, true, TAG_DONE);
+	screen->DrawText(SmallFont, color, bonus_x - bonus_len*CleanXfac, y, text_bonus, DTA_CleanNoMove, true, TAG_DONE);
+	screen->DrawText(SmallFont, color, secret_x - secret_len*CleanXfac, y, text_secret, DTA_CleanNoMove, true, TAG_DONE);
+	y += height + 6 * CleanYfac;
+
+	missed_kills = wbs->maxkills;
+	missed_items = wbs->maxitems;
+	missed_secrets = wbs->maxsecret;
+
+	// Draw lines for each player
+	for (i = 0; i < MAXPLAYERS; ++i)
+	{
+		player_t *player;
+
+		if (!playeringame[i])
+			continue;
+
+		player = &players[i];
+
+		D_GetPlayerColor(i, &h, &s, &v, NULL);
+		HSVtoRGB(&r, &g, &b, h, s, v);
+
+		screen->Dim(MAKERGB(clamp(int(r*255.f), 0, 255),
+			clamp(int(g*255.f), 0, 255),
+			clamp(int(b*255.f), 0, 255)), 0.8f, x, y - ypadding, (secret_x - x) + (8 * CleanXfac), lineheight);
+
+		if (playerready[i] || player->Bot != NULL) // Bots are automatically assumed ready, to prevent confusion
+			screen->DrawTexture(readyico, x - (readyico->GetWidth() * CleanXfac), y, DTA_CleanNoMove, true, TAG_DONE);
+
+		color = (EColorRange)HU_GetRowColor(player, i == consoleplayer);
+		if (player->mo->ScoreIcon.isValid())
+		{
+			FTexture *pic = TexMan[player->mo->ScoreIcon];
+			screen->DrawTexture(pic, icon_x, y, DTA_CleanNoMove, true, TAG_DONE);
+		}
+		screen->DrawText(SmallFont, color, name_x, y + ypadding, player->userinfo.GetName(), DTA_CleanNoMove, true, TAG_DONE);
+		WI_drawPercent(SmallFont, kills_x, y + ypadding, cnt_kills[i], wbs->maxkills, false, color);
+		missed_kills -= cnt_kills[i];
+		if (ng_state >= 4)
+		{
+			WI_drawPercent(SmallFont, bonus_x, y + ypadding, cnt_items[i], wbs->maxitems, false, color);
+			missed_items -= cnt_items[i];
+			if (ng_state >= 6)
+			{
+				WI_drawPercent(SmallFont, secret_x, y + ypadding, cnt_secret[i], wbs->maxsecret, false, color);
+				missed_secrets -= cnt_secret[i];
 			}
 		}
-    }
-    else if (::g->dm_state & 1)
-    {
-		if (!--::g->cnt_pause)
+		y += lineheight + CleanYfac;
+	}
+
+	// Draw "MISSED" line
+	y += 3 * CleanYfac;
+	screen->DrawText(SmallFont, CR_DARKGRAY, name_x, y, GStrings("SCORE_MISSED"), DTA_CleanNoMove, true, TAG_DONE);
+	WI_drawPercent(SmallFont, kills_x, y, missed_kills, wbs->maxkills, false, CR_DARKGRAY);
+	if (ng_state >= 4)
+	{
+		WI_drawPercent(SmallFont, bonus_x, y, missed_items, wbs->maxitems, false, CR_DARKGRAY);
+		if (ng_state >= 6)
 		{
-			::g->dm_state++;
-			::g->cnt_pause = TICRATE;
+			WI_drawPercent(SmallFont, secret_x, y, missed_secrets, wbs->maxsecret, false, CR_DARKGRAY);
 		}
-    }
+	}
+
+	// Draw "TOTAL" line
+	y += height + 3 * CleanYfac;
+	color = (gameinfo.gametype & GAME_Raven) ? CR_GREEN : CR_UNTRANSLATED;
+	screen->DrawText(SmallFont, color, name_x, y, GStrings("SCORE_TOTAL"), DTA_CleanNoMove, true, TAG_DONE);
+	WI_drawNum(SmallFont, kills_x, y, wbs->maxkills, 0, false, color);
+	if (ng_state >= 4)
+	{
+		WI_drawNum(SmallFont, bonus_x, y, wbs->maxitems, 0, false, color);
+		if (ng_state >= 6)
+		{
+			WI_drawNum(SmallFont, secret_x, y, wbs->maxsecret, 0, false, color);
+		}
+	}
 }
 
+static int  sp_state;
 
-
-void WI_drawDeathmatchStats(void)
+void WI_initStats ()
 {
+	state = StatCount;
+	acceleratestage = 0;
+	sp_state = 1;
+	cnt_kills[0] = cnt_items[0] = cnt_secret[0] = -1;
+	cnt_time = cnt_par = -1;
+	cnt_pause = TICRATE;
+	
+	cnt_total_time = -1;
+}
 
-    int		i;
-    int		j;
-    int		x;
-    int		y;
-    int		w;
-    
-    int		lh;	// line height
+void WI_updateStats ()
+{
+	WI_updateAnimatedBack ();
 
-    lh = WI_SPACINGY;
-
-    WI_slamBackground();
-    
-    // draw animated background
-    WI_drawAnimatedBack(); 
-    WI_drawLF();
-
-    // draw stat titles (top line)
-    V_DrawPatch(DM_TOTALSX-SHORT(::g->total->width)/2,
-		DM_MATRIXY-WI_SPACINGY+10,
-		FB,
-		::g->total);
-    
-    V_DrawPatch(DM_KILLERSX, DM_KILLERSY, FB, ::g->killers);
-    V_DrawPatch(DM_VICTIMSX, DM_VICTIMSY, FB, ::g->victims);
-
-    // draw P?
-    x = DM_MATRIXX + DM_SPACINGX;
-    y = DM_MATRIXY;
-
-    for (i=0 ; i<MAXPLAYERS ; i++)
-    {
-	if (::g->playeringame[i])
+	if (acceleratestage && sp_state != 10)
 	{
-	    V_DrawPatch(x-SHORT(::g->wistuff_p[i]->width)/2,
-			DM_MATRIXY - WI_SPACINGY,
-			FB,
-			::g->wistuff_p[i]);
-	    
-	    V_DrawPatch(DM_MATRIXX-SHORT(::g->wistuff_p[i]->width)/2,
-			y,
-			FB,
-			::g->wistuff_p[i]);
+		acceleratestage = 0;
+		sp_state = 10;
+		S_Sound (CHAN_VOICE | CHAN_UI, "intermission/nextstage", 1, ATTN_NONE);
 
-		// No splitscreen on PC currently
-	    if (i == ::g->me /* && !gameLocal->IsSplitscreen() */ )
-	    {
-		V_DrawPatch(x-SHORT(::g->wistuff_p[i]->width)/2,
-			    DM_MATRIXY - WI_SPACINGY,
-			    FB,
-			    ::g->bstar);
+		cnt_kills[0] = plrs[me].skills;
+		cnt_items[0] = plrs[me].sitems;
+		cnt_secret[0] = plrs[me].ssecret;
+		cnt_time = Tics2Seconds(plrs[me].stime);
+		cnt_par = wbs->partime / TICRATE;
+		cnt_total_time = Tics2Seconds(wbs->totaltime);
+	}
 
-		V_DrawPatch(DM_MATRIXX-SHORT(::g->wistuff_p[i]->width)/2,
-			    y,
-			    FB,
-			    ::g->star);
-	    }
+	if (sp_state == 2)
+	{
+		if (gameinfo.intermissioncounter)
+		{
+			cnt_kills[0] += 2;
+
+			if (!(bcnt&3))
+				S_Sound (CHAN_VOICE | CHAN_UI, "intermission/tick", 1, ATTN_NONE);
+		}
+		if (!gameinfo.intermissioncounter || cnt_kills[0] >= plrs[me].skills)
+		{
+			cnt_kills[0] = plrs[me].skills;
+			S_Sound (CHAN_VOICE | CHAN_UI, "intermission/nextstage", 1, ATTN_NONE);
+			sp_state++;
+		}
+	}
+	else if (sp_state == 4)
+	{
+		if (gameinfo.intermissioncounter)
+		{
+			cnt_items[0] += 2;
+
+			if (!(bcnt&3))
+				S_Sound (CHAN_VOICE | CHAN_UI, "intermission/tick", 1, ATTN_NONE);
+		}
+		if (!gameinfo.intermissioncounter || cnt_items[0] >= plrs[me].sitems)
+		{
+			cnt_items[0] = plrs[me].sitems;
+			S_Sound (CHAN_VOICE | CHAN_UI, "intermission/nextstage", 1, ATTN_NONE);
+			sp_state++;
+		}
+	}
+	else if (sp_state == 6)
+	{
+		if (gameinfo.intermissioncounter)
+		{
+			cnt_secret[0] += 2;
+
+			if (!(bcnt&3))
+				S_Sound (CHAN_VOICE | CHAN_UI, "intermission/tick", 1, ATTN_NONE);
+		}
+		if (!gameinfo.intermissioncounter || cnt_secret[0] >= plrs[me].ssecret)
+		{
+			cnt_secret[0] = plrs[me].ssecret;
+			S_Sound (CHAN_VOICE | CHAN_UI, "intermission/nextstage", 1, ATTN_NONE);
+			sp_state++;
+		}
+	}
+	else if (sp_state == 8)
+	{
+		if (gameinfo.intermissioncounter)
+		{
+			if (!(bcnt&3))
+				S_Sound (CHAN_VOICE | CHAN_UI, "intermission/tick", 1, ATTN_NONE);
+
+			cnt_time += 3;
+			cnt_par += 3;
+			cnt_total_time += 3;
+		}
+
+		int sec = Tics2Seconds(plrs[me].stime);
+		if (!gameinfo.intermissioncounter || cnt_time >= sec)
+			cnt_time = sec;
+
+		int tsec = Tics2Seconds(wbs->totaltime);
+		if (!gameinfo.intermissioncounter || cnt_total_time >= tsec)
+			cnt_total_time = tsec;
+
+		if (!gameinfo.intermissioncounter || cnt_par >= wbs->partime / TICRATE)
+		{
+			cnt_par = wbs->partime / TICRATE;
+
+			if (cnt_time >= sec)
+			{
+				cnt_total_time = tsec;
+				S_Sound (CHAN_VOICE | CHAN_UI, "intermission/nextstage", 1, ATTN_NONE);
+				sp_state++;
+			}
+		}
+	}
+	else if (sp_state == 10)
+	{
+		if (acceleratestage)
+		{
+			S_Sound (CHAN_VOICE | CHAN_UI, "intermission/paststats", 1, ATTN_NONE);
+			WI_initShowNextLoc();
+		}
+	}
+	else if (sp_state & 1)
+	{
+		if (!--cnt_pause)
+		{
+			sp_state++;
+			cnt_pause = TICRATE;
+		}
+	}
+}
+
+void WI_drawStats (void)
+{
+	// line height
+	int lh; 	
+
+	lh = IntermissionFont->GetHeight() * 3 / 2;
+
+	// draw animated background
+	WI_drawBackground(); 
+	
+	WI_drawLF();
+	
+	if (gameinfo.gametype & GAME_DoomChex)
+	{
+		screen->DrawTexture (kills, SP_STATSX, SP_STATSY, DTA_Clean, true, TAG_DONE);
+		WI_drawPercent (IntermissionFont, 320 - SP_STATSX, SP_STATSY, cnt_kills[0], wbs->maxkills);
+
+		screen->DrawTexture (items, SP_STATSX, SP_STATSY+lh, DTA_Clean, true, TAG_DONE);
+		WI_drawPercent (IntermissionFont, 320 - SP_STATSX, SP_STATSY+lh, cnt_items[0], wbs->maxitems);
+
+		screen->DrawTexture (sp_secret, SP_STATSX, SP_STATSY+2*lh, DTA_Clean, true, TAG_DONE);
+		WI_drawPercent (IntermissionFont, 320 - SP_STATSX, SP_STATSY+2*lh, cnt_secret[0], wbs->maxsecret);
+
+		screen->DrawTexture (timepic, SP_TIMEX, SP_TIMEY, DTA_Clean, true, TAG_DONE);
+		WI_drawTime (160 - SP_TIMEX, SP_TIMEY, cnt_time);
+		if (wi_showtotaltime)
+		{
+			WI_drawTime (160 - SP_TIMEX, SP_TIMEY + lh, cnt_total_time, true);	// no 'sucks' for total time ever!
+		}
+
+		if (wbs->partime)
+		{
+			screen->DrawTexture (par, 160 + SP_TIMEX, SP_TIMEY, DTA_Clean, true, TAG_DONE);
+			WI_drawTime (320 - SP_TIMEX, SP_TIMEY, cnt_par);
+		}
+
 	}
 	else
 	{
-		//V_DrawPatch(x-SHORT(::g->wistuff_bp[i]->width)/2,
-	    //  DM_MATRIXY - WI_SPACINGY, FB, ::g->wistuff_bp[i]);
-		//V_DrawPatch(DM_MATRIXX-SHORT(::g->wistuff_bp[i]->width)/2,
-		// y, FB, ::g->wistuff_bp[i]);
-	}
-	x += DM_SPACINGX;
-	y += WI_SPACINGY;
-    }
-
-    // draw stats
-    y = DM_MATRIXY+10;
-    w = SHORT(::g->num[0]->width);
-
-    for (i=0 ; i<MAXPLAYERS ; i++)
-    {
-	x = DM_MATRIXX + DM_SPACINGX;
-
-	if (::g->playeringame[i])
-	{
-	    for (j=0 ; j<MAXPLAYERS ; j++)
-	    {
-		if (::g->playeringame[j])
-		    WI_drawNum(x+w, y, ::g->dm_frags[i][j], 2);
-
-		x += DM_SPACINGX;
-	    }
-	    WI_drawNum(DM_TOTALSX+w, y, ::g->dm_totals[i], 2);
-	}
-	y += WI_SPACINGY;
-    }
-}
-
-
-void WI_initNetgameStats(void)
-{
-
-    int i;
-
-    ::g->state = StatCount;
-    ::g->acceleratestage = 0;
-    ::g->ng_state = 1;
-
-    ::g->cnt_pause = TICRATE;
-
-    for (i=0 ; i<MAXPLAYERS ; i++)
-    {
-	if (!::g->playeringame[i])
-	    continue;
-
-	::g->cnt_kills[i] = ::g->cnt_items[i] = ::g->cnt_secret[i] = ::g->cnt_frags[i] = 0;
-
-	::g->dofrags += WI_fragSum(i);
-    }
-
-    ::g->dofrags = !!::g->dofrags;
-
-    WI_initAnimatedBack();
-
-	// JAF PS3 
-	/*
-	if ( gameLocal->IsMultiplayer() ) {
-		if(gameLocal->IsFullVersion() && gameLocal->liveSession.IsHost( ::g->consoleplayer )) {
-			bool endOfMission = false;
-
-			if ( ::g->gamemission == 0 && ::g->gamemap == 30 ) {
-				endOfMission = true;
-			}
-			else if ( ::g->gamemission > 0 && ::g->gamemap == 8 ) {
-				endOfMission = true;
-			}
-
-			gameLocal->liveSession.GetCoopSession().BeginEndLevel( endOfMission );
-		}
-	}
-	*/
-
-	DoomLib::ShowXToContinue( true );
-	
-}
-
-
-
-void WI_updateNetgameStats(void)
-{
-
-    int		i;
-    int		fsum;
-    
-    qboolean	stillticking;
-
-    WI_updateAnimatedBack();
-
-    if (::g->acceleratestage && ::g->ng_state != 10)
-    {
-	::g->acceleratestage = 0;
-
-	for (i=0 ; i<MAXPLAYERS ; i++)
-	{
-	    if (!::g->playeringame[i])
-		continue;
-
-	    ::g->cnt_kills[i] = (plrs[i].skills * 100) / ::g->wbs->maxkills;
-	    ::g->cnt_items[i] = (plrs[i].sitems * 100) / ::g->wbs->maxitems;
-	    ::g->cnt_secret[i] = (plrs[i].ssecret * 100) / ::g->wbs->maxsecret;
-
-	    if (::g->dofrags)
-		::g->cnt_frags[i] = WI_fragSum(i);
-	}
-	S_StartSound(0, sfx_barexp);
-	::g->ng_state = 10;
-    }
-
-    if (::g->ng_state == 2)
-    {
-	if (!(::g->bcnt&3))
-	    S_StartSound(0, sfx_pistol);
-
-	stillticking = false;
-
-	for (i=0 ; i<MAXPLAYERS ; i++)
-	{
-	    if (!::g->playeringame[i])
-		continue;
-
-	    ::g->cnt_kills[i] += 2;
-
-	    if (::g->cnt_kills[i] >= (plrs[i].skills * 100) / ::g->wbs->maxkills)
-		::g->cnt_kills[i] = (plrs[i].skills * 100) / ::g->wbs->maxkills;
-	    else
-		stillticking = true;
-	}
-	
-	if (!stillticking)
-	{
-	    S_StartSound(0, sfx_barexp);
-	    ::g->ng_state++;
-	}
-    }
-    else if (::g->ng_state == 4)
-    {
-	if (!(::g->bcnt&3))
-	    S_StartSound(0, sfx_pistol);
-
-	stillticking = false;
-
-	for (i=0 ; i<MAXPLAYERS ; i++)
-	{
-	    if (!::g->playeringame[i])
-		continue;
-
-	    ::g->cnt_items[i] += 2;
-	    if (::g->cnt_items[i] >= (plrs[i].sitems * 100) / ::g->wbs->maxitems)
-		::g->cnt_items[i] = (plrs[i].sitems * 100) / ::g->wbs->maxitems;
-	    else
-		stillticking = true;
-	}
-	if (!stillticking)
-	{
-	    S_StartSound(0, sfx_barexp);
-	    ::g->ng_state++;
-	}
-    }
-    else if (::g->ng_state == 6)
-    {
-	if (!(::g->bcnt&3))
-	    S_StartSound(0, sfx_pistol);
-
-	stillticking = false;
-
-	for (i=0 ; i<MAXPLAYERS ; i++)
-	{
-	    if (!::g->playeringame[i])
-		continue;
-
-	    ::g->cnt_secret[i] += 2;
-
-	    if (::g->cnt_secret[i] >= (plrs[i].ssecret * 100) / ::g->wbs->maxsecret)
-		::g->cnt_secret[i] = (plrs[i].ssecret * 100) / ::g->wbs->maxsecret;
-	    else
-		stillticking = true;
-	}
-	
-	if (!stillticking)
-	{
-	    S_StartSound(0, sfx_barexp);
-	    ::g->ng_state += 1 + 2*!::g->dofrags;
-	}
-    }
-    else if (::g->ng_state == 8)
-    {
-	if (!(::g->bcnt&3))
-	    S_StartSound(0, sfx_pistol);
-
-	stillticking = false;
-
-	for (i=0 ; i<MAXPLAYERS ; i++)
-	{
-	    if (!::g->playeringame[i])
-		continue;
-
-	    ::g->cnt_frags[i] += 1;
-
-	    if (::g->cnt_frags[i] >= (fsum = WI_fragSum(i)))
-		::g->cnt_frags[i] = fsum;
-	    else
-		stillticking = true;
-	}
-	
-	if (!stillticking)
-	{
-	    S_StartSound(0, sfx_pldeth);
-	    ::g->ng_state++;
-	}
-    }
-    else if (::g->ng_state == 10)
-    {
-	if (::g->acceleratestage)
-	{
-		if ( !::g->demoplayback && ( ::g->usergame || ::g->netgame ) ) {
-			S_StartSound(0, sfx_sgcock);
-
-			// need to do this again if they buy it
-			localCalculateAchievements(false);
-			if (::g->gamemode == commercial){
-				WI_initNoState();
-				DoomLib::ShowXToContinue( false );
-			}
-			else{
-				WI_initShowNextLoc();
-			}
-		}
-	}
-    }
-    else if (::g->ng_state & 1)
-    {
-	if (!--::g->cnt_pause)
-	{
-	    ::g->ng_state++;
-	    ::g->cnt_pause = TICRATE;
-	}
-    }
-}
-
-
-
-void WI_drawNetgameStats(void)
-{
-    int		i;
-    int		x;
-    int		y;
-    int		pwidth = SHORT(::g->percent->width);
-
-    WI_slamBackground();
-    
-    // draw animated background
-    WI_drawAnimatedBack(); 
-
-    WI_drawLF();
-
-    // draw stat titles (top line)
-    V_DrawPatch(NG_STATSX+NG_SPACINGX-SHORT(::g->kills->width),
-		NG_STATSY, FB, ::g->kills);
-
-    V_DrawPatch(NG_STATSX+2*NG_SPACINGX-SHORT(::g->items->width),
-		NG_STATSY, FB, ::g->items);
-
-    V_DrawPatch(NG_STATSX+3*NG_SPACINGX-SHORT(::g->secret->width),
-		NG_STATSY, FB, ::g->secret);
-    
-    if (::g->dofrags)
-	V_DrawPatch(NG_STATSX+4*NG_SPACINGX-SHORT(::g->wistuff_frags->width),
-		    NG_STATSY, FB, ::g->wistuff_frags);
-
-    // draw stats
-    y = NG_STATSY + SHORT(::g->kills->height);
-
-    for (i=0 ; i<MAXPLAYERS ; i++)
-    {
-	if (!::g->playeringame[i])
-	    continue;
-
-	x = NG_STATSX;
-	V_DrawPatch(x-SHORT(::g->wistuff_p[i]->width), y, FB, ::g->wistuff_p[i]);
-
-	// No splitscreen on PC
-	if (i == ::g->me /* && !gameLocal->IsSplitscreen() */ )
-	    V_DrawPatch(x-SHORT(::g->wistuff_p[i]->width), y, FB, ::g->star);
-
-	x += NG_SPACINGX;
-	WI_drawPercent(x-pwidth, y+10, ::g->cnt_kills[i]);	x += NG_SPACINGX;
-	WI_drawPercent(x-pwidth, y+10, ::g->cnt_items[i]);	x += NG_SPACINGX;
-	WI_drawPercent(x-pwidth, y+10, ::g->cnt_secret[i]);	x += NG_SPACINGX;
-
-	if (::g->dofrags)
-	    WI_drawNum(x, y+10, ::g->cnt_frags[i], -1);
-
-	y += WI_SPACINGY;
-    }
-
-}
-
-
-void WI_initStats(void)
-{
-    ::g->state = StatCount;
-    ::g->acceleratestage = 0;
-    ::g->sp_state = 1;
-    ::g->cnt_kills[0] = ::g->cnt_items[0] = ::g->cnt_secret[0] = -1;
-    ::g->cnt_time = ::g->cnt_par = -1;
-    ::g->cnt_pause = TICRATE;
-
-    WI_initAnimatedBack();
-
-	DoomLib::ShowXToContinue( true );
-}
-
-void WI_updateStats(void)
-{
-
-    WI_updateAnimatedBack();
-
-    if (::g->acceleratestage && ::g->sp_state != 10)
-    {
-		::g->acceleratestage = 0;
-		::g->cnt_kills[0] = (plrs[::g->me].skills * 100) / ::g->wbs->maxkills;
-		::g->cnt_items[0] = (plrs[::g->me].sitems * 100) / ::g->wbs->maxitems;
-		::g->cnt_secret[0] = (plrs[::g->me].ssecret * 100) / ::g->wbs->maxsecret;
-		::g->cnt_time = plrs[::g->me].stime / TICRATE;
-		::g->cnt_par = ::g->wbs->partime / TICRATE;
-		S_StartSound(0, sfx_barexp);
-		::g->sp_state = 10;
-    }
-
-    if (::g->sp_state == 2)
-    {
-		::g->cnt_kills[0] += 2;
-
-		if (!(::g->bcnt&3))
-			S_StartSound(0, sfx_pistol);
-
-		if (::g->cnt_kills[0] >= (plrs[::g->me].skills * 100) / ::g->wbs->maxkills)
+		screen->DrawText (BigFont, CR_UNTRANSLATED, 50, 65, GStrings("TXT_IMKILLS"), DTA_Clean, true, DTA_Shadow, true, TAG_DONE);
+		screen->DrawText (BigFont, CR_UNTRANSLATED, 50, 90, GStrings("TXT_IMITEMS"), DTA_Clean, true, DTA_Shadow, true, TAG_DONE);
+		screen->DrawText (BigFont, CR_UNTRANSLATED, 50, 115, GStrings("TXT_IMSECRETS"), DTA_Clean, true, DTA_Shadow, true, TAG_DONE);
+
+		int countpos = gameinfo.gametype==GAME_Strife? 285:270;
+		if (sp_state >= 2)
 		{
-			::g->cnt_kills[0] = (plrs[::g->me].skills * 100) / ::g->wbs->maxkills;
-			S_StartSound(0, sfx_barexp);
-			::g->sp_state++;
+			WI_drawPercent (IntermissionFont, countpos, 65, cnt_kills[0], wbs->maxkills);
 		}
-    }
-    else if (::g->sp_state == 4)
-    {
-		::g->cnt_items[0] += 2;
-
-		if (!(::g->bcnt&3))
-			S_StartSound(0, sfx_pistol);
-
-		if (::g->cnt_items[0] >= (plrs[::g->me].sitems * 100) / ::g->wbs->maxitems)
+		if (sp_state >= 4)
 		{
-			::g->cnt_items[0] = (plrs[::g->me].sitems * 100) / ::g->wbs->maxitems;
-			S_StartSound(0, sfx_barexp);
-			::g->sp_state++;
+			WI_drawPercent (IntermissionFont, countpos, 90, cnt_items[0], wbs->maxitems);
 		}
-    }
-    else if (::g->sp_state == 6)
-    {
-		::g->cnt_secret[0] += 2;
-
-		if (!(::g->bcnt&3))
-			S_StartSound(0, sfx_pistol);
-
-		if (::g->cnt_secret[0] >= (plrs[::g->me].ssecret * 100) / ::g->wbs->maxsecret)
+		if (sp_state >= 6)
 		{
-			::g->cnt_secret[0] = (plrs[::g->me].ssecret * 100) / ::g->wbs->maxsecret;
-			S_StartSound(0, sfx_barexp);
-			::g->sp_state++;
+			WI_drawPercent (IntermissionFont, countpos, 115, cnt_secret[0], wbs->maxsecret);
 		}
-    }
-
-    else if (::g->sp_state == 8)
-    {
-		if (!(::g->bcnt&3))
-			S_StartSound(0, sfx_pistol);
-
-		::g->cnt_time += 3;
-
-		if (::g->cnt_time >= plrs[::g->me].stime / TICRATE)
-			::g->cnt_time = plrs[::g->me].stime / TICRATE;
-
-		::g->cnt_par += 3;
-
-		if (::g->cnt_par >= ::g->wbs->partime / TICRATE)
+		if (sp_state >= 8)
 		{
-			::g->cnt_par = ::g->wbs->partime / TICRATE;
-
-			if (::g->cnt_time >= plrs[::g->me].stime / TICRATE)
+			screen->DrawText (BigFont, CR_UNTRANSLATED, 85, 160, GStrings("TXT_IMTIME"),
+				DTA_Clean, true, DTA_Shadow, true, TAG_DONE);
+			WI_drawTime (249, 160, cnt_time);
+			if (wi_showtotaltime)
 			{
-				S_StartSound(0, sfx_barexp);
-				::g->sp_state++;
+				WI_drawTime (249, 180, cnt_total_time);
 			}
 		}
-    }
-    else if (::g->sp_state == 10)
-    {
-        if (::g->acceleratestage)
-		{
-			if ( !::g->demoplayback && ( ::g->usergame || ::g->netgame ) ) {
-
-				S_StartSound(0, sfx_sgcock);
-
-				// need to do this again if they buy it
-				localCalculateAchievements(false);
-
-				if (::g->gamemode == commercial) {
-					WI_initNoState();
-				}
-				else{
-					WI_initShowNextLoc();
-				}
-			}
-		}
-    }
-    else if (::g->sp_state & 1)
-    {
-		if (!--::g->cnt_pause)
-		{
-			::g->sp_state++;
-			::g->cnt_pause = TICRATE;
-		}
-    }
-
+	}
 }
 
-void WI_drawStats(void)
-{
-    // line height
-    int lh;	
-
-    lh = (3*SHORT(::g->num[0]->height))/2;
-
-    WI_slamBackground();
-
-    // draw animated background
-    WI_drawAnimatedBack();
-    
-    WI_drawLF();
-
-    V_DrawPatch(SP_STATSX, SP_STATSY, FB, ::g->kills);
-    WI_drawPercent(ORIGINAL_WIDTH - SP_STATSX, SP_STATSY, ::g->cnt_kills[0]);
-
-    V_DrawPatch(SP_STATSX, SP_STATSY+lh, FB, ::g->items);
-    WI_drawPercent(ORIGINAL_WIDTH - SP_STATSX, SP_STATSY+lh, ::g->cnt_items[0]);
-
-    V_DrawPatch(SP_STATSX, SP_STATSY+2*lh, FB, ::g->sp_secret);
-    WI_drawPercent(ORIGINAL_WIDTH - SP_STATSX, SP_STATSY+2*lh, ::g->cnt_secret[0]);
-
-    V_DrawPatch(SP_TIMEX, SP_TIMEY, FB, ::g->time);
-    WI_drawTime(ORIGINAL_WIDTH/2 - SP_TIMEX, SP_TIMEY, ::g->cnt_time);
-
-	// DHM - Nerve :: Added episode 4 par times
-    //if (::g->wbs->epsd < 3)
-    //{
-	V_DrawPatch(ORIGINAL_WIDTH/2 + SP_TIMEX, SP_TIMEY, FB, ::g->par);
-	WI_drawTime(ORIGINAL_WIDTH - SP_TIMEX, SP_TIMEY, ::g->cnt_par);
-    //}
-
-}
-
+// ====================================================================
+// WI_checkForAccelerate
+// Purpose: See if the player has hit either the attack or use key
+//          or mouse button.  If so we set acceleratestage to 1 and
+//          all those display routines above jump right to the end.
+// Args:    none
+// Returns: void
+//
+// ====================================================================
 void WI_checkForAccelerate(void)
 {
-    int   i;
-    player_t  *player;
+	int i;
+	player_t *player;
 
-    // check for button presses to skip delays
-    for (i=0, player = ::g->players ; i<MAXPLAYERS ; i++, player++)
-    {
-		if (::g->playeringame[i])
+	// check for button presses to skip delays
+	for (i = 0, player = players; i < MAXPLAYERS; i++, player++)
+	{
+		if (playeringame[i])
 		{
-			if (player->cmd.buttons & BT_ATTACK)
+			if ((player->cmd.ucmd.buttons ^ player->oldbuttons) &&
+				((players[i].cmd.ucmd.buttons & players[i].oldbuttons)
+					== players[i].oldbuttons) && player->Bot == NULL)
 			{
-				if (!player->attackdown) {
-					::g->acceleratestage = 1;
-				}
-				player->attackdown = true;
-			} else {
-				player->attackdown = false;
+				acceleratestage = 1;
+				playerready[i] = true;
 			}
-			if (player->cmd.buttons & BT_USE)
-			{
-				if (!player->usedown) {
-					::g->acceleratestage = 1;
-				}
-				player->usedown = true;
-				
-			} else {
-				player->usedown = false;
-			}
+			player->oldbuttons = player->cmd.ucmd.buttons;
 		}
-    }
+	}
 }
 
-
-
-// Updates stuff each tick
+// ====================================================================
+// WI_Ticker
+// Purpose: Do various updates every gametic, for stats, animation,
+//          checking that intermission music is running, etc.
+// Args:    none
+// Returns: void
+//
+// ====================================================================
 void WI_Ticker(void)
 {
-    // counter for general background animation
-    ::g->bcnt++;  
-
-    if (::g->bcnt == 1)
-    {
-	// intermission music
-  	if ( ::g->gamemode == commercial )
-	  S_ChangeMusic(mus_dm2int, true);
-	else
-	  S_ChangeMusic(mus_inter, true); 
-    }
-
-    WI_checkForAccelerate();
-
-    switch (::g->state)
-    {
-      case StatCount:
-	if (::g->deathmatch) WI_updateDeathmatchStats();
-	else if (::g->netgame) WI_updateNetgameStats();
-	else WI_updateStats();
-	break;
+	// counter for general background animation
+	bcnt++;  
 	
-      case ShowNextLoc:
-	WI_updateShowNextLoc();
-	break;
-	
-      case NoState:
-	WI_updateNoState();
-	break;
-    }
+	if (bcnt == 1)
+	{
+		// intermission music - use the defaults if none specified
+		if (level.info->InterMusic.IsNotEmpty()) 
+			S_ChangeMusic(level.info->InterMusic, level.info->intermusicorder);
+		else
+			S_ChangeMusic (gameinfo.intermissionMusic.GetChars(), gameinfo.intermissionOrder); 
 
+	}
+	
+	WI_checkForAccelerate();
+	
+	switch (state)
+	{
+    case StatCount:
+		if (deathmatch) WI_updateDeathmatchStats();
+		else if (multiplayer) WI_updateNetgameStats();
+		else WI_updateStats();
+		break;
+		
+    case ShowNextLoc:
+		WI_updateShowNextLoc();
+		break;
+		
+    case NoState:
+		WI_updateNoState();
+		break;
+
+	case LeavingIntermission:
+		// Hush, GCC.
+		break;
+	}
 }
+
 
 void WI_loadData(void)
-{	
-	int		i;
-	int		j;
-	char	name[9];
-	anim_t*	a;
+{
+	entering.Init(gameinfo.mStatscreenEnteringFont);
+	finished.Init(gameinfo.mStatscreenFinishedFont);
+	mapname.Init(gameinfo.mStatscreenMapNameFont);
 
-	if (::g->gamemode == commercial)
-		strcpy(name, "INTERPIC");
-		// DHM - Nerve :: Use our background image
-		//strcpy(name, "DMENUPIC");
-	else 
-		sprintf(name, "WIMAP%d", ::g->wbs->epsd);
-
-	if ( ::g->gamemode == retail )
+	if (gameinfo.gametype & GAME_DoomChex)
 	{
-		if (::g->wbs->epsd == 3)
-			strcpy(name,"INTERPIC");
+		kills = TexMan["WIOSTK"];		// "kills"
+		secret = TexMan["WIOSTS"];		// "scrt"
+		sp_secret = TexMan["WISCRT2"];	// "secret"
+		items = TexMan["WIOSTI"];		// "items"
+		frags = TexMan["WIFRGS"];		// "frgs"
+		timepic = TexMan["WITIME"];		// "time"
+		sucks = TexMan["WISUCKS"];		// "sucks"
+		par = TexMan["WIPAR"];			// "par"
+		killers = TexMan["WIKILRS"];	// "killers" (vertical]
+		victims = TexMan["WIVCTMS"];	// "victims" (horiz]
+		total = TexMan["WIMSTT"];		// "total"
+//		star = TexMan["STFST01"];		// your face
+//		bstar = TexMan["STFDEAD0"];		// dead face
+ 		p = TexMan["STPBANY"];
 	}
-
-	// background
-	::g->bg = (patch_t*)W_CacheLumpName(name, PU_LEVEL_SHARED);    
-
-	V_DrawPatch(0, 0, 1, ::g->bg);
-
-
-    // UNUSED unsigned char *pic = ::g->screens[1];
-    // if (::g->gamemode == commercial)
-    // {
-    // darken the background image
-    // while (pic != ::g->screens[1] + SCREENHEIGHT*SCREENWIDTH)
-    // {
-    //   *pic = ::g->colormaps[256*25 + *pic];
-    //   pic++;
-    // }
-    //}
-
-	if (::g->gamemode == commercial)
+#if 0
+	else if (gameinfo.gametype & GAME_Raven)
 	{
-		::g->NUMCMAPS = 33; //Doom 3 BFG Edition's Doom 2 WAD includes MAP33 Betray
-		::g->lnames = (patch_t **) DoomLib::Z_Malloc(sizeof(patch_t*) * ::g->NUMCMAPS, PU_LEVEL_SHARED, 0);
-		for (i=0 ; i < ::g->NUMCMAPS ; i++)
-		{								
-			sprintf(name, "CWILV%2.2d", i);
-			::g->lnames[i] = (patch_t*)W_CacheLumpName(name, PU_LEVEL_SHARED);
-		}					
-	}
-	else
-	{
-		::g->lnames = (patch_t **) DoomLib::Z_Malloc(sizeof(patch_t*) * ( NUMMAPS ), PU_LEVEL_SHARED, 0);
-		for (i=0 ; i<NUMMAPS ; i++)
+		if (gameinfo.gametype == GAME_Heretic)
 		{
-			sprintf(name, "WILV%d%d", ::g->wbs->epsd, i);
-			::g->lnames[i] = (patch_t*)W_CacheLumpName(name, PU_LEVEL_SHARED);
+			star = TexMan["FACEA0"];
+			bstar = TexMan["FACEB0"];
 		}
-
-		// you are here
-		::g->yah[0] = (patch_t*)W_CacheLumpName("WIURH0", PU_LEVEL_SHARED);
-
-		// you are here (alt.)
-		::g->yah[1] = (patch_t*)W_CacheLumpName("WIURH1", PU_LEVEL_SHARED);
-
-		// splat
-		::g->splat = (patch_t*)W_CacheLumpName("WISPLAT", PU_LEVEL_SHARED); 
-	
-		if (::g->wbs->epsd < 3)
+		else
 		{
-			for (j=0;j < ::g->NUMANIMS[::g->wbs->epsd];j++)
-			{
-				a = &::g->wi_stuff_anims[::g->wbs->epsd][j];
-				for (i=0;i<a->nanims;i++)
-				{
-					// MONDO HACK!
-					if (::g->wbs->epsd != 1 || j != 8) 
-					{
-						// animations
-						sprintf(name, "WIA%d%.2d%.2d", ::g->wbs->epsd, j, i);  
-						a->p[i] = (patch_t*)W_CacheLumpName(name, PU_LEVEL_SHARED);
-					}
-					else
-					{
-						// HACK ALERT!
-						a->p[i] = ::g->wi_stuff_anims[1][4].p[i]; 
-					}
-				}
-			}
+			star = BigFont->GetChar('*', NULL);
+			bstar = star;
 		}
 	}
-
-	// More hacks on minus sign.
-	::g->wiminus = (patch_t*)W_CacheLumpName("WIMINUS", PU_LEVEL_SHARED); 
-
-	for (i=0;i<10;i++)
+	else // Strife needs some handling, too!
 	{
-		// numbers 0-9
-		sprintf(name, "WINUM%d", i);     
-		::g->num[i] = (patch_t*)W_CacheLumpName(name, PU_LEVEL_SHARED);
+		star = BigFont->GetChar('*', NULL);
+		bstar = star;
 	}
+#endif
 
-	// percent sign
-	::g->percent = (patch_t*)W_CacheLumpName("WIPCNT", PU_LEVEL_SHARED);
+	// Use the local level structure which can be overridden by hubs
+	lnametexts[0] = level.LevelName;		
 
-	// "finished"
-	::g->finished = (patch_t*)W_CacheLumpName("WIF", PU_LEVEL_SHARED);
+	level_info_t *li = FindLevelInfo(wbs->next);
+	if (li) lnametexts[1] = li->LookupLevelName();
+	else lnametexts[1] = "";
 
-	// "entering"
-	::g->entering = (patch_t*)W_CacheLumpName("WIENTER", PU_LEVEL_SHARED);
-
-	// "kills"
-	::g->kills = (patch_t*)W_CacheLumpName("WIOSTK", PU_LEVEL_SHARED);   
-
-	// "scrt"
-	::g->secret = (patch_t*)W_CacheLumpName("WIOSTS", PU_LEVEL_SHARED);
-
-	 // "secret"
-	::g->sp_secret = (patch_t*)W_CacheLumpName("WISCRT2", PU_LEVEL_SHARED);
-
-	::g->items = (patch_t*)W_CacheLumpName("WIOSTI", PU_LEVEL_SHARED);
-
-	// "frgs"
-	::g->wistuff_frags = (patch_t*)W_CacheLumpName("WIFRGS", PU_LEVEL_SHARED);    
-
-	// ":"
-	::g->colon = (patch_t*)W_CacheLumpName("WICOLON", PU_LEVEL_SHARED); 
-
-	// "time"
-	::g->time = (patch_t*)W_CacheLumpName("WITIME", PU_LEVEL_SHARED);   
-
-	// "sucks"
-	::g->sucks = (patch_t*)W_CacheLumpName("WISUCKS", PU_LEVEL_SHARED);  
-
-	// "par"
-	::g->par = (patch_t*)W_CacheLumpName("WIPAR", PU_LEVEL_SHARED);   
-
-	// "killers" (vertical)
-	::g->killers = (patch_t*)W_CacheLumpName("WIKILRS", PU_LEVEL_SHARED);
-
-	// "victims" (horiz)
-	::g->victims = (patch_t*)W_CacheLumpName("WIVCTMS", PU_LEVEL_SHARED);
-
-	// "total"
-	::g->total = (patch_t*)W_CacheLumpName("WIMSTT", PU_LEVEL_SHARED);   
-
-	// your face
-	::g->star = (patch_t*)W_CacheLumpName("STFST01", PU_STATIC_SHARED); // ALAN: this is statically in the game...
-
-	// dead face
-	::g->bstar = (patch_t*)W_CacheLumpName("STFDEAD0", PU_STATIC_SHARED);    
-
-	for (i=0 ; i<MAXPLAYERS ; i++)
-	{
-		// "1,2,3,4"
-		sprintf(name, "STPB%d", i);      
-		::g->wistuff_p[i] = (patch_t*)W_CacheLumpName(name, PU_LEVEL_SHARED);
-
-		// "1,2,3,4"
-		sprintf(name, "WIBP%d", i+1);     
-		::g->wistuff_bp[i] = (patch_t*)W_CacheLumpName(name, PU_LEVEL_SHARED);
-	}
-
+	WI_LoadBackground(false);
 }
 
-void WI_unloadData(void)
+void WI_unloadData ()
 {
-	Z_FreeTags( PU_LEVEL_SHARED, PU_LEVEL_SHARED );
-	// HACK ALERT - reset these to help stability? they are used for consistency checking
-	for (int i=0 ; i<MAXPLAYERS ; i++)
-	{
-		if (::g->playeringame[i]) 
-		{ 
-			::g->players[i].mo = NULL;
-		}
-	}
-	::g->bg = NULL;	
+	// [RH] The texture data gets unloaded at pre-map time, so there's nothing to do here
+	return;
 }
 
 void WI_Drawer (void)
 {
-    switch (::g->state)
-    {
-      case StatCount:
-	if (::g->deathmatch)
-	    WI_drawDeathmatchStats();
-	else if (::g->netgame)
-	    WI_drawNetgameStats();
+	switch (state)
+	{
+	case StatCount:
+		if (deathmatch)
+			WI_drawDeathmatchStats();
+		else if (multiplayer)
+			WI_drawNetgameStats();
+		else
+			WI_drawStats();
+		break;
+	
+	case ShowNextLoc:
+		WI_drawShowNextLoc();
+		break;
+	
+	case LeavingIntermission:
+		break;
+
+	default:
+		WI_drawNoState();
+		break;
+	}
+}
+
+
+void WI_initVariables (wbstartstruct_t *wbstartstruct)
+{
+	wbs = wbstartstruct;
+	acceleratestage = 0;
+	cnt = bcnt = 0;
+	me = wbs->pnum;
+	plrs = wbs->plyr;
+}
+
+void WI_Start (wbstartstruct_t *wbstartstruct)
+{
+	noautostartmap = false;
+	V_SetBlend (0,0,0,0);
+	WI_initVariables (wbstartstruct);
+	WI_loadData ();
+	if (deathmatch)
+		WI_initDeathmatchStats();
+	else if (multiplayer)
+		WI_initNetgameStats();
 	else
-	    WI_drawStats();
-	break;
-	
-      case ShowNextLoc:
-	WI_drawShowNextLoc();
-	break;
-	
-      case NoState:
-	WI_drawNoState();
-	break;
-    }
-}
-
-
-void WI_initVariables(wbstartstruct_t* wbstartstruct)
-{
-
-    ::g->wbs = wbstartstruct;
-
-#ifdef RANGECHECKING
-    if (::g->gamemode != commercial)
-    {
-      if ( ::g->gamemode == retail )
-	RNGCHECK(::g->wbs->epsd, 0, 3);
-      else
-	RNGCHECK(::g->wbs->epsd, 0, 2);
-    }
-    else
-    {
-	RNGCHECK(::g->wbs->last, 0, 8);
-	RNGCHECK(::g->wbs->next, 0, 8);
-    }
-    RNGCHECK(::g->wbs->pnum, 0, MAXPLAYERS);
-    RNGCHECK(::g->wbs->pnum, 0, MAXPLAYERS);
-#endif
-
-    ::g->acceleratestage = 0;
-    ::g->cnt = ::g->bcnt = 0;
-    ::g->firstrefresh = 1;
-    ::g->me = ::g->wbs->pnum;
-    plrs = ::g->wbs->plyr;
-
-    if (!::g->wbs->maxkills)
-	::g->wbs->maxkills = 1;
-
-    if (!::g->wbs->maxitems)
-	::g->wbs->maxitems = 1;
-
-    if (!::g->wbs->maxsecret)
-	::g->wbs->maxsecret = 1;
-
-    if ( ::g->gamemode != retail )
-      if (::g->wbs->epsd > 2)
-	::g->wbs->epsd -= 3;
-}
-
-void WI_Start(wbstartstruct_t* wbstartstruct)
-{
-
-    WI_initVariables(wbstartstruct);
-    WI_loadData();
-
-    if (::g->deathmatch)
-	WI_initDeathmatchStats();
-    else if (::g->netgame)
-	WI_initNetgameStats();
-    else
-	WI_initStats();
+		WI_initStats();
+	S_StopAllChannels ();
+	SN_StopAllSequences ();
 }

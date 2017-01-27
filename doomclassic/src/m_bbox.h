@@ -1,55 +1,79 @@
-/*
-===========================================================================
+// Emacs style mode select	 -*- C++ -*- 
+//-----------------------------------------------------------------------------
+//
+// $Id:$
+//
+// Copyright (C) 1993-1996 by id Software, Inc.
+//
+// This source is available for distribution and/or modification
+// only under the terms of the DOOM Source Code License as
+// published by id Software. All rights reserved.
+//
+// The source is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// FITNESS FOR A PARTICULAR PURPOSE. See the DOOM Source Code License
+// for more details.
+//
+// DESCRIPTION:
+//	  Nil.
+//	  
+//-----------------------------------------------------------------------------
 
-Doom 3 BFG Edition GPL Source Code
-Copyright (C) 1993-2012 id Software LLC, a ZeniMax Media company. 
+#ifndef __M_BBOX_H__
+#define __M_BBOX_H__
 
-This file is part of the Doom 3 BFG Edition GPL Source Code ("Doom 3 BFG Edition Source Code").  
+#include "doomtype.h"
 
-Doom 3 BFG Edition Source Code is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
+struct line_t;
+struct node_t;
 
-Doom 3 BFG Edition Source Code is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with Doom 3 BFG Edition Source Code.  If not, see <http://www.gnu.org/licenses/>.
-
-In addition, the Doom 3 BFG Edition Source Code is also subject to certain additional terms. You should have received a copy of these additional terms immediately following the terms and conditions of the GNU General Public License which accompanied the Doom 3 BFG Edition Source Code.  If not, please request a copy in writing from id Software at the address below.
-
-If you have questions concerning this license or the applicable additional terms, you may contact in writing id Software LLC, c/o ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
-
-===========================================================================
-*/
-
-#ifndef __M_BBOX__
-#define __M_BBOX__
-
-#include "m_fixed.h"
-
-
-// Bounding box coordinate storage.
-enum
+class FBoundingBox
 {
-    BOXTOP,
-    BOXBOTTOM,
-    BOXLEFT,
-    BOXRIGHT
-};	// bbox coordinates
+public:
+	FBoundingBox()
+	{
+		ClearBox();
+	}
 
-// Bounding box functions.
-void M_ClearBox (fixed_t*	box);
+	FBoundingBox(fixed_t left, fixed_t bottom, fixed_t right, fixed_t top)
+	{
+		m_Box[BOXTOP] = top;
+		m_Box[BOXLEFT] = left;
+		m_Box[BOXRIGHT] = right;
+		m_Box[BOXBOTTOM] = bottom;
+	}
 
-void
-M_AddToBox
-( fixed_t*	box,
-  fixed_t	x,
-  fixed_t	y );
+	FBoundingBox(fixed_t x, fixed_t y, fixed_t radius);
+
+	void ClearBox ()
+	{
+		m_Box[BOXTOP] = m_Box[BOXRIGHT] = FIXED_MIN;
+		m_Box[BOXBOTTOM] = m_Box[BOXLEFT] = FIXED_MAX;
+	}
+
+	// Returns a bounding box that encloses both bounding boxes
+	FBoundingBox operator | (const FBoundingBox &box2) const
+	{
+		return FBoundingBox(m_Box[BOXLEFT] < box2.m_Box[BOXLEFT] ? m_Box[BOXLEFT] : box2.m_Box[BOXLEFT],
+							m_Box[BOXBOTTOM] < box2.m_Box[BOXBOTTOM] ? m_Box[BOXBOTTOM] : box2.m_Box[BOXBOTTOM],
+							m_Box[BOXRIGHT] > box2.m_Box[BOXRIGHT] ? m_Box[BOXRIGHT] : box2.m_Box[BOXRIGHT],
+							m_Box[BOXTOP] > box2.m_Box[BOXTOP] ? m_Box[BOXTOP] : box2.m_Box[BOXTOP]);
+	}
+
+	void AddToBox (fixed_t x, fixed_t y);
+
+	inline fixed_t Top () const { return m_Box[BOXTOP]; }
+	inline fixed_t Bottom () const { return m_Box[BOXBOTTOM]; }
+	inline fixed_t Left () const { return m_Box[BOXLEFT]; }
+	inline fixed_t Right () const { return m_Box[BOXRIGHT]; }
+
+	int BoxOnLineSide (const line_t *ld) const;
+
+	void Set(int index, fixed_t value) {m_Box[index] = value;}
+
+protected:
+	fixed_t m_Box[4];
+};
 
 
-#endif
-
+#endif //__M_BBOX_H__

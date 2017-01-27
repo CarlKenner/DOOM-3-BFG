@@ -1,73 +1,224 @@
-/*
-===========================================================================
-
-Doom 3 BFG Edition GPL Source Code
-Copyright (C) 1993-2012 id Software LLC, a ZeniMax Media company. 
-
-This file is part of the Doom 3 BFG Edition GPL Source Code ("Doom 3 BFG Edition Source Code").  
-
-Doom 3 BFG Edition Source Code is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-Doom 3 BFG Edition Source Code is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with Doom 3 BFG Edition Source Code.  If not, see <http://www.gnu.org/licenses/>.
-
-In addition, the Doom 3 BFG Edition Source Code is also subject to certain additional terms. You should have received a copy of these additional terms immediately following the terms and conditions of the GNU General Public License which accompanied the Doom 3 BFG Edition Source Code.  If not, please request a copy in writing from id Software at the address below.
-
-If you have questions concerning this license or the applicable additional terms, you may contact in writing id Software LLC, c/o ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
-
-===========================================================================
-*/
-
-#ifndef __M_SWAP__
-#define __M_SWAP__
+// Emacs style mode select	 -*- C++ -*- 
+//-----------------------------------------------------------------------------
+//
+// $Id:$
+//
+// Copyright (C) 1993-1996 by id Software, Inc.
+//
+// This source is available for distribution and/or modification
+// only under the terms of the DOOM Source Code License as
+// published by id Software. All rights reserved.
+//
+// The source is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// FITNESS FOR A PARTICULAR PURPOSE. See the DOOM Source Code License
+// for more details.
+//
+// DESCRIPTION:
+//		Endianess handling, swapping 16bit and 32bit.
+//
+//-----------------------------------------------------------------------------
 
 
-#ifdef __GNUG__
-#pragma interface
-#endif
+#ifndef __M_SWAP_H__
+#define __M_SWAP_H__
 
+#include <stdlib.h>
 
 // Endianess handling.
 // WAD files are stored little endian.
+
+#ifdef __APPLE__
+#include <libkern/OSByteOrder.h>
+
+inline short LittleShort(short x)
+{
+	return (short)OSSwapLittleToHostInt16((uint16_t)x);
+}
+
+inline unsigned short LittleShort(unsigned short x)
+{
+	return OSSwapLittleToHostInt16(x);
+}
+
+inline short LittleShort(int x)
+{
+	return OSSwapLittleToHostInt16((uint16_t)x);
+}
+
+inline int LittleLong(int x)
+{
+	return OSSwapLittleToHostInt32((uint32_t)x);
+}
+
+inline unsigned int LittleLong(unsigned int x)
+{
+	return OSSwapLittleToHostInt32(x);
+}
+
+inline short BigShort(short x)
+{
+	return (short)OSSwapBigToHostInt16((uint16_t)x);
+}
+
+inline unsigned short BigShort(unsigned short x)
+{
+	return OSSwapBigToHostInt16(x);
+}
+
+inline int BigLong(int x)
+{
+	return OSSwapBigToHostInt32((uint32_t)x);
+}
+
+inline unsigned int BigLong(unsigned int x)
+{
+	return OSSwapBigToHostInt32(x);
+}
+
+#else
 #ifdef __BIG_ENDIAN__
-//short	SwapSHORT(short);
-//long	SwapLONG(long);
 
 // Swap 16bit, that is, MSB and LSB byte.
-inline unsigned short SwapSHORT(unsigned short x)
+// No masking with 0xFF should be necessary. 
+inline short LittleShort (short x)
 {
-    // No masking with 0xFF should be necessary. 
-    return (x>>8) | (x<<8);
+	return (short)((((unsigned short)x)>>8) | (((unsigned short)x)<<8));
+}
+
+inline unsigned short LittleShort (unsigned short x)
+{
+	return (unsigned short)((x>>8) | (x<<8));
 }
 
 // Swapping 32bit.
-inline unsigned long SwapLONG( unsigned long x)
+inline unsigned int LittleLong (unsigned int x)
 {
-    return
-	(x>>24)
-	| ((x>>8) & 0xff00)
-	| ((x<<8) & 0xff0000)
-	| (x<<24);
+	return (unsigned int)(
+		(x>>24)
+		| ((x>>8) & 0xff00)
+		| ((x<<8) & 0xff0000)
+		| (x<<24));
 }
 
+inline int LittleLong (int x)
+{
+	return (int)(
+		(((unsigned int)x)>>24)
+		| ((((unsigned int)x)>>8) & 0xff00)
+		| ((((unsigned int)x)<<8) & 0xff0000)
+		| (((unsigned int)x)<<24));
+}
 
-#define SHORT(x)	((short)SwapSHORT((unsigned short) (x)))
-#define LONG(x)         ((long)SwapLONG((unsigned long) (x)))
+#define BigShort(x)		(x)
+#define BigLong(x)		(x)
+
 #else
-#define SHORT(x)	(x)
-#define LONG(x)         (x)
+
+#define LittleShort(x)		(x)
+#define LittleLong(x) 		(x)
+
+#if defined(_MSC_VER)
+
+inline short BigShort (short x)
+{
+	return (short)_byteswap_ushort((unsigned short)x);
+}
+
+inline unsigned short BigShort (unsigned short x)
+{
+	return _byteswap_ushort(x);
+}
+
+inline int BigLong (int x)
+{
+	return (int)_byteswap_ulong((unsigned long)x);
+}
+
+inline unsigned int BigLong (unsigned int x)
+{
+	return (unsigned int)_byteswap_ulong((unsigned long)x);
+}
+
+inline unsigned long BigLong(unsigned long x)
+{
+	return (unsigned long)_byteswap_ulong((unsigned long)x);
+}
+#pragma warning (default: 4035)
+
+#else
+
+inline short BigShort (short x)
+{
+	return (short)((((unsigned short)x)>>8) | (((unsigned short)x)<<8));
+}
+
+inline unsigned short BigShort (unsigned short x)
+{
+	return (unsigned short)((x>>8) | (x<<8));
+}
+
+inline unsigned int BigLong (unsigned int x)
+{
+	return (unsigned int)(
+		(x>>24)
+		| ((x>>8) & 0xff00)
+		| ((x<<8) & 0xff0000)
+		| (x<<24));
+}
+
+inline int BigLong (int x)
+{
+	return (int)(
+		(((unsigned int)x)>>24)
+		| ((((unsigned int)x)>>8) & 0xff00)
+		| ((((unsigned int)x)<<8) & 0xff0000)
+		| (((unsigned int)x)<<24));
+}
 #endif
 
+#endif // __BIG_ENDIAN__
+#endif // __APPLE__
 
 
-
+// Data accessors, since some data is highly likely to be unaligned.
+#if defined(_M_IX86) || defined(_M_X64) || defined(__i386__) 
+inline int GetShort(const unsigned char *foo)
+{
+	return *(const short *)foo;
+}
+inline int GetInt(const unsigned char *foo)
+{
+	return *(const int *)foo;
+}
+inline int GetBigInt(const unsigned char *foo)
+{
+	return BigLong(GetInt(foo));
+}
+#else
+inline int GetShort(const unsigned char *foo)
+{
+	return short(foo[0] | (foo[1] << 8));
+}
+inline int GetInt(const unsigned char *foo)
+{
+	return int(foo[0] | (foo[1] << 8) | (foo[2] << 16) | (foo[3] << 24));
+}
+inline int GetBigInt(const unsigned char *foo)
+{
+	return int((foo[0] << 24) | (foo[1] << 16) | (foo[2] << 8) | foo[3]);
+}
+#endif
+#ifdef __BIG_ENDIAN__
+inline int GetNativeInt(const unsigned char *foo)
+{
+	return GetBigInt(foo);
+}
+#else
+inline int GetNativeInt(const unsigned char *foo)
+{
+	return GetInt(foo);
+}
 #endif
 
+#endif // __M_SWAP_H__

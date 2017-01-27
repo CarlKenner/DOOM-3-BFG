@@ -1,519 +1,1745 @@
-/*
-===========================================================================
+// Emacs style mode select	 -*- C++ -*- 
+//-----------------------------------------------------------------------------
+//
+// $Id:$
+//
+// Copyright (C) 1993-1996 by id Software, Inc.
+//
+// This source is available for distribution and/or modification
+// only under the terms of the DOOM Source Code License as
+// published by id Software. All rights reserved.
+//
+// The source is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// FITNESS FOR A PARTICULAR PURPOSE. See the DOOM Source Code License
+// for more details.
+//
+// $Log:$
+//
+// DESCRIPTION:
+//		Functions to draw patches (by post) directly to screen->
+//		Functions to blit a block to the screen->
+//
+//-----------------------------------------------------------------------------
 
-Doom 3 BFG Edition GPL Source Code
-Copyright (C) 1993-2012 id Software LLC, a ZeniMax Media company. 
 
-This file is part of the Doom 3 BFG Edition GPL Source Code ("Doom 3 BFG Edition Source Code").  
-
-Doom 3 BFG Edition Source Code is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-Doom 3 BFG Edition Source Code is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with Doom 3 BFG Edition Source Code.  If not, see <http://www.gnu.org/licenses/>.
-
-In addition, the Doom 3 BFG Edition Source Code is also subject to certain additional terms. You should have received a copy of these additional terms immediately following the terms and conditions of the GNU General Public License which accompanied the Doom 3 BFG Edition Source Code.  If not, please request a copy in writing from id Software at the address below.
-
-If you have questions concerning this license or the applicable additional terms, you may contact in writing id Software LLC, c/o ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
-
-===========================================================================
-*/
-
-#include "Precompiled.h"
-#include "globaldata.h"
-
+#include <stdio.h>
 
 #include "i_system.h"
-#include "r_local.h"
+#include "x86.h"
+#include "i_video.h"
+#include "r_state.h"
 
 #include "doomdef.h"
 #include "doomdata.h"
+#include "doomstat.h"
 
+#include "c_console.h"
+#include "hu_stuff.h"
+
+#include "m_argv.h"
 #include "m_bbox.h"
 #include "m_swap.h"
 
+#include "i_video.h"
 #include "v_video.h"
+#include "v_text.h"
+
+#include "w_wad.h"
+
+#include "c_cvars.h"
+#include "c_dispatch.h"
+#include "cmdlib.h"
+#include "gi.h"
+#include "templates.h"
+#include "sbar.h"
+#include "hardware.h"
+#include "r_data/r_translate.h"
+#include "f_wipe.h"
+#include "m_png.h"
+#include "colormatcher.h"
+#include "v_palette.h"
+#include "r_sky.h"
+#include "r_utility.h"
+#include "r_renderer.h"
+#include "menu/menu.h"
+#include "r_data/voxels.h"
 
 
-// Each screen is [ORIGINAL_WIDTH*ORIGINALHEIGHT]; 
- 
+FRenderer *Renderer;
 
+IMPLEMENT_ABSTRACT_CLASS (DCanvas)
+IMPLEMENT_ABSTRACT_CLASS (DFrameBuffer)
 
+#if defined(_DEBUG) && defined(_M_IX86)
+#define DBGBREAK	{ __asm int 3 }
+#else
+#define DBGBREAK
+#endif
 
-// Now where did these came from?
-const byte gammatable[5][256] =
+class DDummyFrameBuffer : public DFrameBuffer
 {
-    {1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,
-     17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,
-     33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,
-     49,50,51,52,53,54,55,56,57,58,59,60,61,62,63,64,
-     65,66,67,68,69,70,71,72,73,74,75,76,77,78,79,80,
-     81,82,83,84,85,86,87,88,89,90,91,92,93,94,95,96,
-     97,98,99,100,101,102,103,104,105,106,107,108,109,110,111,112,
-     113,114,115,116,117,118,119,120,121,122,123,124,125,126,127,128,
-     128,129,130,131,132,133,134,135,136,137,138,139,140,141,142,143,
-     144,145,146,147,148,149,150,151,152,153,154,155,156,157,158,159,
-     160,161,162,163,164,165,166,167,168,169,170,171,172,173,174,175,
-     176,177,178,179,180,181,182,183,184,185,186,187,188,189,190,191,
-     192,193,194,195,196,197,198,199,200,201,202,203,204,205,206,207,
-     208,209,210,211,212,213,214,215,216,217,218,219,220,221,222,223,
-     224,225,226,227,228,229,230,231,232,233,234,235,236,237,238,239,
-     240,241,242,243,244,245,246,247,248,249,250,251,252,253,254,255},
+	DECLARE_CLASS (DDummyFrameBuffer, DFrameBuffer);
+public:
+	DDummyFrameBuffer (int width, int height)
+		: DFrameBuffer (0, 0)
+	{
+		Width = width;
+		Height = height;
+	}
+	bool Lock(bool buffered) { DBGBREAK; return false; }
+	void Update() { DBGBREAK; }
+	PalEntry *GetPalette() { DBGBREAK; return NULL; }
+	void GetFlashedPalette(PalEntry palette[256]) { DBGBREAK; }
+	void UpdatePalette() { DBGBREAK; }
+	bool SetGamma(float gamma) { Gamma = gamma; return true; }
+	bool SetFlash(PalEntry rgb, int amount) { DBGBREAK; return false; }
+	void GetFlash(PalEntry &rgb, int &amount) { DBGBREAK; }
+	int GetPageCount() { DBGBREAK; return 0; }
+	bool IsFullscreen() { DBGBREAK; return 0; }
+#ifdef _WIN32
+	void PaletteChanged() {}
+	int QueryNewPalette() { return 0; }
+	bool Is8BitMode() { return false; }
+#endif
 
-    {2,4,5,7,8,10,11,12,14,15,16,18,19,20,21,23,24,25,26,27,29,30,31,
-     32,33,34,36,37,38,39,40,41,42,44,45,46,47,48,49,50,51,52,54,55,
-     56,57,58,59,60,61,62,63,64,65,66,67,69,70,71,72,73,74,75,76,77,
-     78,79,80,81,82,83,84,85,86,87,88,89,90,91,92,93,94,95,96,97,98,
-     99,100,101,102,103,104,105,106,107,108,109,110,111,112,113,114,
-     115,116,117,118,119,120,121,122,123,124,125,126,127,128,129,129,
-     130,131,132,133,134,135,136,137,138,139,140,141,142,143,144,145,
-     146,147,148,148,149,150,151,152,153,154,155,156,157,158,159,160,
-     161,162,163,163,164,165,166,167,168,169,170,171,172,173,174,175,
-     175,176,177,178,179,180,181,182,183,184,185,186,186,187,188,189,
-     190,191,192,193,194,195,196,196,197,198,199,200,201,202,203,204,
-     205,205,206,207,208,209,210,211,212,213,214,214,215,216,217,218,
-     219,220,221,222,222,223,224,225,226,227,228,229,230,230,231,232,
-     233,234,235,236,237,237,238,239,240,241,242,243,244,245,245,246,
-     247,248,249,250,251,252,252,253,254,255},
+	float Gamma;
+};
+IMPLEMENT_ABSTRACT_CLASS (DDummyFrameBuffer)
 
-    {4,7,9,11,13,15,17,19,21,22,24,26,27,29,30,32,33,35,36,38,39,40,42,
-     43,45,46,47,48,50,51,52,54,55,56,57,59,60,61,62,63,65,66,67,68,69,
-     70,72,73,74,75,76,77,78,79,80,82,83,84,85,86,87,88,89,90,91,92,93,
-     94,95,96,97,98,100,101,102,103,104,105,106,107,108,109,110,111,112,
-     113,114,114,115,116,117,118,119,120,121,122,123,124,125,126,127,128,
-     129,130,131,132,133,133,134,135,136,137,138,139,140,141,142,143,144,
-     144,145,146,147,148,149,150,151,152,153,153,154,155,156,157,158,159,
-     160,160,161,162,163,164,165,166,166,167,168,169,170,171,172,172,173,
-     174,175,176,177,178,178,179,180,181,182,183,183,184,185,186,187,188,
-     188,189,190,191,192,193,193,194,195,196,197,197,198,199,200,201,201,
-     202,203,204,205,206,206,207,208,209,210,210,211,212,213,213,214,215,
-     216,217,217,218,219,220,221,221,222,223,224,224,225,226,227,228,228,
-     229,230,231,231,232,233,234,235,235,236,237,238,238,239,240,241,241,
-     242,243,244,244,245,246,247,247,248,249,250,251,251,252,253,254,254,
-     255},
+// SimpleCanvas is not really abstract, but this macro does not
+// try to generate a CreateNew() function.
+IMPLEMENT_ABSTRACT_CLASS (DSimpleCanvas)
 
-    {8,12,16,19,22,24,27,29,31,34,36,38,40,41,43,45,47,49,50,52,53,55,
-     57,58,60,61,63,64,65,67,68,70,71,72,74,75,76,77,79,80,81,82,84,85,
-     86,87,88,90,91,92,93,94,95,96,98,99,100,101,102,103,104,105,106,107,
-     108,109,110,111,112,113,114,115,116,117,118,119,120,121,122,123,124,
-     125,126,127,128,129,130,131,132,133,134,135,135,136,137,138,139,140,
-     141,142,143,143,144,145,146,147,148,149,150,150,151,152,153,154,155,
-     155,156,157,158,159,160,160,161,162,163,164,165,165,166,167,168,169,
-     169,170,171,172,173,173,174,175,176,176,177,178,179,180,180,181,182,
-     183,183,184,185,186,186,187,188,189,189,190,191,192,192,193,194,195,
-     195,196,197,197,198,199,200,200,201,202,202,203,204,205,205,206,207,
-     207,208,209,210,210,211,212,212,213,214,214,215,216,216,217,218,219,
-     219,220,221,221,222,223,223,224,225,225,226,227,227,228,229,229,230,
-     231,231,232,233,233,234,235,235,236,237,237,238,238,239,240,240,241,
-     242,242,243,244,244,245,246,246,247,247,248,249,249,250,251,251,252,
-     253,253,254,254,255},
+class FPaletteTester : public FTexture
+{
+public:
+	FPaletteTester ();
 
-    {16,23,28,32,36,39,42,45,48,50,53,55,57,60,62,64,66,68,69,71,73,75,76,
-     78,80,81,83,84,86,87,89,90,92,93,94,96,97,98,100,101,102,103,105,106,
-     107,108,109,110,112,113,114,115,116,117,118,119,120,121,122,123,124,
-     125,126,128,128,129,130,131,132,133,134,135,136,137,138,139,140,141,
-     142,143,143,144,145,146,147,148,149,150,150,151,152,153,154,155,155,
-     156,157,158,159,159,160,161,162,163,163,164,165,166,166,167,168,169,
-     169,170,171,172,172,173,174,175,175,176,177,177,178,179,180,180,181,
-     182,182,183,184,184,185,186,187,187,188,189,189,190,191,191,192,193,
-     193,194,195,195,196,196,197,198,198,199,200,200,201,202,202,203,203,
-     204,205,205,206,207,207,208,208,209,210,210,211,211,212,213,213,214,
-     214,215,216,216,217,217,218,219,219,220,220,221,221,222,223,223,224,
-     224,225,225,226,227,227,228,228,229,229,230,230,231,232,232,233,233,
-     234,234,235,235,236,236,237,237,238,239,239,240,240,241,241,242,242,
-     243,243,244,244,245,245,246,246,247,247,248,248,249,249,250,250,251,
-     251,252,252,253,254,254,255,255}
+	const BYTE *GetColumn(unsigned int column, const Span **spans_out);
+	const BYTE *GetPixels();
+	void Unload();
+	bool CheckModified();
+	void SetTranslation(int num);
+
+protected:
+	BYTE Pixels[16*16];
+	int CurTranslation;
+	int WantTranslation;
+	static const Span DummySpan[2];
+
+	void MakeTexture();
 };
 
+const FTexture::Span FPaletteTester::DummySpan[2] = { { 0, 16 }, { 0, 0 } };
+
+int DisplayWidth, DisplayHeight, DisplayBits;
+
+FFont *SmallFont, *SmallFont2, *BigFont, *ConFont, *IntermissionFont;
+
+extern "C" {
+DWORD Col2RGB8[65][256];
+DWORD *Col2RGB8_LessPrecision[65];
+DWORD Col2RGB8_Inverse[65][256];
+ColorTable32k RGB32k;
+}
+
+static DWORD Col2RGB8_2[63][256];
+
+// [RH] The framebuffer is no longer a mere byte array.
+// There's also only one, not four.
+DFrameBuffer *screen;
+
+CVAR (Int, vid_defwidth, 640, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
+CVAR (Int, vid_defheight, 480, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
+CVAR (Int, vid_defbits, 8, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
+CVAR (Bool, vid_fps, false, 0)
+CVAR (Bool, ticker, false, 0)
+CVAR (Int, vid_showpalette, 0, 0)
+
+CUSTOM_CVAR (Bool, vid_vsync, false, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
+{
+	if (screen != NULL)
+	{
+		screen->SetVSync (*self);
+	}
+}
+
+CUSTOM_CVAR (Int, vid_refreshrate, 0, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
+{
+	if (screen != NULL)
+	{
+		screen->NewRefreshRate();
+	}
+}
+
+CUSTOM_CVAR (Float, dimamount, -1.f, CVAR_ARCHIVE)
+{
+	if (self < 0.f && self != -1.f)
+	{
+		self = -1.f;
+	}
+	else if (self > 1.f)
+	{
+		self = 1.f;
+	}
+}
+CVAR (Color, dimcolor, 0xffd700, CVAR_ARCHIVE)
+
+// [RH] Set true when vid_setmode command has been executed
+bool	setmodeneeded = false;
+// [RH] Resolution to change to when setmodeneeded is true
+int		NewWidth, NewHeight, NewBits;
 
 
-			 
 //
 // V_MarkRect 
 // 
-void
-V_MarkRect
-( int		x,
-  int		y,
-  int		width,
-  int		height ) 
-{ 
-    M_AddToBox (::g->dirtybox, x, y); 
-    M_AddToBox (::g->dirtybox, x+width-1, y+height-1); 
-} 
- 
+void V_MarkRect (int x, int y, int width, int height)
+{
+}
 
+DCanvas *DCanvas::CanvasChain = NULL;
+
+//==========================================================================
 //
-// V_CopyRect 
-// 
-void
-V_CopyRect
-( int		srcx,
-  int		srcy,
-  int		srcscrn,
-  int		width,
-  int		height,
-  int		destx,
-  int		desty,
-  int		destscrn ) 
-{ 
-    byte*	src;
-    byte*	dest; 
-	 
-#ifdef RANGECHECK 
-    if (srcx<0
-	||srcx+width >ORIGINAL_WIDTH
-	|| srcy<0
-	|| srcy+height>ORIGINAL_HEIGHT 
-	||destx<0||destx+width >ORIGINAL_WIDTH
-	|| desty<0
-	|| desty+height>ORIGINAL_HEIGHT
-	|| (unsigned)srcscrn>4
-	|| (unsigned)destscrn>4)
-    {
-	I_Error ("Bad V_CopyRect");
-    }
-#endif 
-    V_MarkRect (destx, desty, width, height); 
-
-	// SMF - rewritten for scaling
-	srcx *= GLOBAL_IMAGE_SCALER;
-	srcy *= GLOBAL_IMAGE_SCALER;
-	destx *= GLOBAL_IMAGE_SCALER;
-	desty *= GLOBAL_IMAGE_SCALER;
-	width *= GLOBAL_IMAGE_SCALER;
-	height *= GLOBAL_IMAGE_SCALER;
-
-	src = ::g->screens[srcscrn] + srcy * SCREENWIDTH + srcx; 
-	dest = ::g->screens[destscrn] + desty * SCREENWIDTH + destx; 
-
-	for ( ; height>0 ; height--) { 
-		memcpy(dest, src, width); 
-		src += SCREENWIDTH; 
-		dest += SCREENWIDTH; 
-	} 
-} 
- 
-
+// DCanvas Constructor
 //
-// V_DrawPatch
-// Masks a column based masked pic to the screen. 
+//==========================================================================
+
+DCanvas::DCanvas (int _width, int _height)
+{
+	// Init member vars
+	Buffer = NULL;
+	LockCount = 0;
+	Width = _width;
+	Height = _height;
+
+	// Add to list of active canvases
+	Next = CanvasChain;
+	CanvasChain = this;
+}
+
+//==========================================================================
 //
-void
-V_DrawPatch
-( int		x,
-  int		y,
-  int		scrn,
-  patch_t*	patch ) 
-{ 
+// DCanvas Destructor
+//
+//==========================================================================
 
-    int				count;
-    int				col; 
-    postColumn_t*	column; 
-    byte*			source; 
-    int				w; 
-	 
-    y -= SHORT(patch->topoffset); 
-    x -= SHORT(patch->leftoffset); 
-#ifdef RANGECHECK 
-    if (x<0
-	||x+SHORT(patch->width) >ORIGINAL_WIDTH
-	|| y<0
-	|| y+SHORT(patch->height)>ORIGINAL_HEIGHT
-	|| (unsigned)scrn>4)
-    {
-      I_PrintfE("Patch at %d,%d exceeds LFB\n", x,y );
-      // No I_Error abort - what is up with TNT.WAD?
-      I_PrintfE("V_DrawPatch: bad patch (ignored)\n");
-      return;
-    }
-#endif 
+DCanvas::~DCanvas ()
+{
+	// Remove from list of active canvases
+	DCanvas *probe = CanvasChain, **prev;
 
-    if (!scrn)
-		V_MarkRect (x, y, SHORT(patch->width), SHORT(patch->height)); 
+	prev = &CanvasChain;
+	probe = CanvasChain;
 
-    col = 0; 
-	int destx = x;
-	int desty = y;
-	 
-    w = SHORT(patch->width);
+	while (probe != NULL)
+	{
+		if (probe == this)
+		{
+			*prev = probe->Next;
+			break;
+		}
+		prev = &probe->Next;
+		probe = probe->Next;
+	}
+}
 
-	// SMF - rewritten for scaling
-	for ( ; col < w ; x++, col++ ) {
-		column = (postColumn_t *)((byte *)patch + LONG(patch->columnofs[col]));
+//==========================================================================
+//
+// DCanvas :: IsValid
+//
+//==========================================================================
 
-		destx = x;
+bool DCanvas::IsValid ()
+{
+	// A nun-subclassed DCanvas is never valid
+	return false;
+}
 
-		// step through the posts in a column
-		while (column->topdelta != 0xff ) {
-			source = (byte *)column + 3;
-			desty = y + column->topdelta;
-			count = column->length;
+//==========================================================================
+//
+// DCanvas :: FlatFill
+//
+// Fill an area with a texture. If local_origin is false, then the origin
+// used for the wrapping is (0,0). Otherwise, (left,right) is used.
+//
+//==========================================================================
 
-			while (count--) {
-				int scaledx, scaledy;
-				scaledx = destx * GLOBAL_IMAGE_SCALER;
-				scaledy = desty * GLOBAL_IMAGE_SCALER;
-				byte src = *source++;
+void DCanvas::FlatFill (int left, int top, int right, int bottom, FTexture *src, bool local_origin)
+{
+	int w = src->GetWidth();
+	int h = src->GetHeight();
 
-				for ( int i = 0; i < GLOBAL_IMAGE_SCALER; i++ ) {
-					for ( int j = 0; j < GLOBAL_IMAGE_SCALER; j++ ) {
-						::g->screens[scrn][( scaledx + j ) + ( scaledy + i ) * SCREENWIDTH] = src;
-					}
-				}
-
-				desty++;
-			}
-
-			column = (postColumn_t *)( (byte *)column + column->length + 4 );
+	// Repeatedly draw the texture, left-to-right, top-to-bottom.
+	for (int y = local_origin ? top : (top / h * h); y < bottom; y += h)
+	{
+		for (int x = local_origin ? left : (left / w * w); x < right; x += w)
+		{
+			DrawTexture (src, x, y,
+				DTA_ClipLeft, left,
+				DTA_ClipRight, right,
+				DTA_ClipTop, top,
+				DTA_ClipBottom, bottom,
+				DTA_TopOffset, 0,
+				DTA_LeftOffset, 0,
+				TAG_DONE);
 		}
 	}
-} 
- 
+}
+
+//==========================================================================
 //
-// V_DrawPatchFlipped 
-// Masks a column based masked pic to the screen.
-// Flips horizontally, e.g. to mirror face.
+// DCanvas :: Dim
 //
-void
-V_DrawPatchFlipped
-( int		x,
-  int		y,
-  int		scrn,
-  patch_t*	patch ) 
-{ 
+// Applies a colored overlay to the entire screen, with the opacity
+// determined by the dimamount cvar.
+//
+//==========================================================================
 
-    int				count;
-    int				col; 
-    postColumn_t*	column; 
-    byte*			source; 
-    int				w; 
-	 
-    y -= SHORT(patch->topoffset); 
-    x -= SHORT(patch->leftoffset); 
-#ifdef RANGECHECK 
-    if (x<0
-	||x+SHORT(patch->width) >ORIGINAL_WIDTH
-	|| y<0
-	|| y+SHORT(patch->height)>ORIGINAL_HEIGHT
-	|| (unsigned)scrn>4)
-    {
-      I_PrintfE("Patch origin %d,%d exceeds LFB\n", x,y );
-      I_Error ("Bad V_DrawPatch in V_DrawPatchFlipped");
-    }
-#endif 
- 
-    if (!scrn)
-	V_MarkRect (x, y, SHORT(patch->width), SHORT(patch->height)); 
+void DCanvas::Dim (PalEntry color)
+{
+	PalEntry dimmer;
+	float amount;
 
-    col = 0; 
-	int destx = x;
-	int desty = y;
+	if (dimamount >= 0)
+	{
+		dimmer = PalEntry(dimcolor);
+		amount = dimamount;
+	}
+	else
+	{
+		dimmer = gameinfo.dimcolor;
+		amount = gameinfo.dimamount;
+	}
 
-    w = SHORT(patch->width); 
+	if (gameinfo.gametype == GAME_Hexen && gamestate == GS_DEMOSCREEN)
+	{ // On the Hexen title screen, the default dimming is not
+		// enough to make the menus readable.
+		amount = MIN<float> (1.f, amount*2.f);
+	}
+	// Add the cvar's dimming on top of the color passed to the function
+	if (color.a != 0)
+	{
+		float dim[4] = { color.r/255.f, color.g/255.f, color.b/255.f, color.a/255.f };
+		V_AddBlend (dimmer.r/255.f, dimmer.g/255.f, dimmer.b/255.f, amount, dim);
+		dimmer = PalEntry (BYTE(dim[0]*255), BYTE(dim[1]*255), BYTE(dim[2]*255));
+		amount = dim[3];
+	}
+	Dim (dimmer, amount, 0, 0, Width, Height);
+}
 
-    for ( ; col<w ; x++, col++ ) 
-    { 
-		column = (postColumn_t *)((byte *)patch + LONG(patch->columnofs[w-1-col])); 
+//==========================================================================
+//
+// DCanvas :: Dim
+//
+// Applies a colored overlay to an area of the screen.
+//
+//==========================================================================
 
-		destx = x;
-	 
-		// step through the posts in a column 
-		while (column->topdelta != 0xff ) 
-		{ 
-			source = (byte *)column + 3; 
-			desty = y + column->topdelta;
-			count = column->length; 
-				 
-			while (count--) 
+void DCanvas::Dim (PalEntry color, float damount, int x1, int y1, int w, int h)
+{
+	if (damount == 0.f)
+		return;
+
+	DWORD *bg2rgb;
+	DWORD fg;
+	int gap;
+	BYTE *spot;
+	int x, y;
+
+	if (x1 >= Width || y1 >= Height)
+	{
+		return;
+	}
+	if (x1 + w > Width)
+	{
+		w = Width - x1;
+	}
+	if (y1 + h > Height)
+	{
+		h = Height - y1;
+	}
+	if (w <= 0 || h <= 0)
+	{
+		return;
+	}
+
+	{
+		int amount;
+
+		amount = (int)(damount * 64);
+		bg2rgb = Col2RGB8[64-amount];
+
+		fg = (((color.r * amount) >> 4) << 20) |
+			  ((color.g * amount) >> 4) |
+			 (((color.b * amount) >> 4) << 10);
+	}
+
+	spot = Buffer + x1 + y1*Pitch;
+	gap = Pitch - w;
+	for (y = h; y != 0; y--)
+	{
+		for (x = w; x != 0; x--)
+		{
+			DWORD bg;
+
+			bg = bg2rgb[(*spot)&0xff];
+			bg = (fg+bg) | 0x1f07c1f;
+			*spot = RGB32k.All[bg&(bg>>15)];
+			spot++;
+		}
+		spot += gap;
+	}
+}
+
+//==========================================================================
+//
+// DCanvas :: GetScreenshotBuffer
+//
+// Returns a buffer containing the most recently displayed frame. The
+// width and height of this buffer are the same as the canvas.
+//
+//==========================================================================
+
+void DCanvas::GetScreenshotBuffer(const BYTE *&buffer, int &pitch, ESSType &color_type)
+{
+	Lock(true);
+	buffer = GetBuffer();
+	pitch = GetPitch();
+	color_type = SS_PAL;
+}
+
+//==========================================================================
+//
+// DCanvas :: ReleaseScreenshotBuffer
+//
+// Releases the buffer obtained through GetScreenshotBuffer. These calls
+// must not be nested.
+//
+//==========================================================================
+
+void DCanvas::ReleaseScreenshotBuffer()
+{
+	Unlock();
+}
+
+//==========================================================================
+//
+// V_GetColorFromString
+//
+// Passed a string of the form "#RGB", "#RRGGBB", "R G B", or "RR GG BB",
+// returns a number representing that color. If palette is non-NULL, the
+// index of the best match in the palette is returned, otherwise the
+// RRGGBB value is returned directly.
+//
+//==========================================================================
+
+int V_GetColorFromString (const DWORD *palette, const char *cstr)
+{
+	int c[3], i, p;
+	char val[3];
+
+	val[2] = '\0';
+
+	// Check for HTML-style #RRGGBB or #RGB color string
+	if (cstr[0] == '#')
+	{
+		size_t len = strlen (cstr);
+
+		if (len == 7)
+		{
+			// Extract each eight-bit component into c[].
+			for (i = 0; i < 3; ++i)
 			{
-				int scaledx, scaledy;
-				scaledx = destx * GLOBAL_IMAGE_SCALER;
-				scaledy = desty * GLOBAL_IMAGE_SCALER;
-				byte src = *source++;
-
-				for ( int i = 0; i < GLOBAL_IMAGE_SCALER; i++ ) {
-					for ( int j = 0; j < GLOBAL_IMAGE_SCALER; j++ ) {
-						::g->screens[scrn][( scaledx + j ) + ( scaledy + i ) * SCREENWIDTH] = src;
+				val[0] = cstr[1 + i*2];
+				val[1] = cstr[2 + i*2];
+				c[i] = ParseHex (val);
+			}
+		}
+		else if (len == 4)
+		{
+			// Extract each four-bit component into c[], expanding to eight bits.
+			for (i = 0; i < 3; ++i)
+			{
+				val[1] = val[0] = cstr[1 + i];
+				c[i] = ParseHex (val);
+			}
+		}
+		else
+		{
+			// Bad HTML-style; pretend it's black.
+			c[2] = c[1] = c[0] = 0;
+		}
+	}
+	else
+	{
+		if (strlen(cstr) == 6)
+		{
+			char *p;
+			int color = strtol(cstr, &p, 16);
+			if (*p == 0)
+			{
+				// RRGGBB string
+				c[0] = (color & 0xff0000) >> 16;
+				c[1] = (color & 0xff00) >> 8;
+				c[2] = (color & 0xff);
+			}
+			else goto normal;
+		}
+		else
+		{
+normal:
+			// Treat it as a space-delimited hexadecimal string
+			for (i = 0; i < 3; ++i)
+			{
+				// Skip leading whitespace
+				while (*cstr <= ' ' && *cstr != '\0')
+				{
+					cstr++;
+				}
+				// Extract a component and convert it to eight-bit
+				for (p = 0; *cstr > ' '; ++p, ++cstr)
+				{
+					if (p < 2)
+					{
+						val[p] = *cstr;
 					}
 				}
+				if (p == 0)
+				{
+					c[i] = 0;
+				}
+				else
+				{
+					if (p == 1)
+					{
+						val[1] = val[0];
+					}
+					c[i] = ParseHex (val);
+				}
+			}
+		}
+	}
+	if (palette)
+		return ColorMatcher.Pick (c[0], c[1], c[2]);
+	else
+		return MAKERGB(c[0], c[1], c[2]);
+}
 
-				desty++;
-			} 
-			column = (postColumn_t *)(  (byte *)column + column->length + 4 );
-		} 
-    }			 
-} 
- 
-
-
+//==========================================================================
 //
-// V_DrawPatchDirect
-// Draws directly to the screen on the pc. 
+// V_GetColorStringByName
 //
-void
-V_DrawPatchDirect
-( int		x,
-  int		y,
-  int		scrn,
-  patch_t*	patch ) 
+// Searches for the given color name in x11r6rgb.txt and returns an
+// HTML-ish "#RRGGBB" string for it if found or the empty string if not.
+//
+//==========================================================================
+
+FString V_GetColorStringByName (const char *name)
 {
-    V_DrawPatch (x,y,scrn, patch); 
+	FMemLump rgbNames;
+	char *rgbEnd;
+	char *rgb, *endp;
+	int rgblump;
+	int c[3], step;
+	size_t namelen;
 
-    /*
-    int		count;
-    int		col; 
-    postColumn_t*	column; 
-    byte*	desttop;
-    byte*	dest;
-    byte*	source; 
-    int		w; 
-	 
-    y -= SHORT(patch->topoffset); 
-    x -= SHORT(patch->leftoffset); 
+	if (Wads.GetNumLumps()==0) return FString();
 
-#ifdef RANGECHECK 
-    if (x<0
-	||x+SHORT(patch->width) >ORIGINAL_WIDTH
-	|| y<0
-	|| y+SHORT(patch->height)>ORIGINAL_HEIGHT
-	|| (unsigned)scrn>4)
-    {
-	I_Error ("Bad V_DrawPatchDirect");
-    }
-#endif 
- 
-    //	V_MarkRect (x, y, SHORT(patch->width), SHORT(patch->height)); 
-    desttop = destscreen + y*ORIGINAL_WIDTH/4 + (x>>2); 
-	 
-    w = SHORT(patch->width); 
-    for ( col = 0 ; col<w ; col++) 
-    { 
-	outp (SC_INDEX+1,1<<(x&3)); 
-	column = (postColumn_t *)((byte *)patch + LONG(patch->columnofs[col])); 
- 
-	// step through the posts in a column 
-	 
-	while (column->topdelta != 0xff ) 
-	{ 
-	    source = (byte *)column + 3; 
-	    dest = desttop + column->topdelta*ORIGINAL_WIDTH/4; 
-	    count = column->length; 
- 
-	    while (count--) 
-	    { 
-		*dest = *source++; 
-		dest += ORIGINAL_WIDTH/4; 
-	    } 
-	    column = (postColumn_t *)(  (byte *)column + column->length 
-				    + 4 ); 
-	} 
-	if ( ((++x)&3) == 0 ) 
-	    desttop++;	// go to next byte, not next plane 
-    }*/ 
-} 
- 
+	rgblump = Wads.CheckNumForName ("X11R6RGB");
+	if (rgblump == -1)
+	{
+		Printf ("X11R6RGB lump not found\n");
+		return FString();
+	}
 
+	rgbNames = Wads.ReadLump (rgblump);
+	rgb = (char *)rgbNames.GetMem();
+	rgbEnd = rgb + Wads.LumpLength (rgblump);
+	step = 0;
+	namelen = strlen (name);
+
+	while (rgb < rgbEnd)
+	{
+		// Skip white space
+		if (*rgb <= ' ')
+		{
+			do
+			{
+				rgb++;
+			} while (rgb < rgbEnd && *rgb <= ' ');
+		}
+		else if (step == 0 && *rgb == '!')
+		{ // skip comment lines
+			do
+			{
+				rgb++;
+			} while (rgb < rgbEnd && *rgb != '\n');
+		}
+		else if (step < 3)
+		{ // collect RGB values
+			c[step++] = strtoul (rgb, &endp, 10);
+			if (endp == rgb)
+			{
+				break;
+			}
+			rgb = endp;
+		}
+		else
+		{ // Check color name
+			endp = rgb;
+			// Find the end of the line
+			while (endp < rgbEnd && *endp != '\n')
+				endp++;
+			// Back up over any whitespace
+			while (endp > rgb && *endp <= ' ')
+				endp--;
+			if (endp == rgb)
+			{
+				break;
+			}
+			size_t checklen = ++endp - rgb;
+			if (checklen == namelen && strnicmp (rgb, name, checklen) == 0)
+			{
+				FString descr;
+				descr.Format ("#%02x%02x%02x", c[0], c[1], c[2]);
+				return descr;
+			}
+			rgb = endp;
+			step = 0;
+		}
+	}
+	if (rgb < rgbEnd)
+	{
+		Printf ("X11R6RGB lump is corrupt\n");
+	}
+	return FString();
+}
+
+//==========================================================================
+//
+// V_GetColor
+//
+// Works like V_GetColorFromString(), but also understands X11 color names.
+//
+//==========================================================================
+
+int V_GetColor (const DWORD *palette, const char *str)
+{
+	FString string = V_GetColorStringByName (str);
+	int res;
+
+	if (!string.IsEmpty())
+	{
+		res = V_GetColorFromString (palette, string);
+	}
+	else
+	{
+		res = V_GetColorFromString (palette, str);
+	}
+	return res;
+}
+
+//==========================================================================
+//
+// BuildTransTable
+//
+// Build the tables necessary for blending
+//
+//==========================================================================
+
+static void BuildTransTable (const PalEntry *palette)
+{
+	int r, g, b;
+
+	// create the RGB555 lookup table
+	for (r = 0; r < 32; r++)
+		for (g = 0; g < 32; g++)
+			for (b = 0; b < 32; b++)
+				RGB32k.RGB[r][g][b] = ColorMatcher.Pick ((r<<3)|(r>>2), (g<<3)|(g>>2), (b<<3)|(b>>2));
+
+	int x, y;
+
+	// create the swizzled palette
+	for (x = 0; x < 65; x++)
+		for (y = 0; y < 256; y++)
+			Col2RGB8[x][y] = (((palette[y].r*x)>>4)<<20) |
+							  ((palette[y].g*x)>>4) |
+							 (((palette[y].b*x)>>4)<<10);
+
+	// create the swizzled palette with the lsb of red and blue forced to 0
+	// (for green, a 1 is okay since it never gets added into)
+	for (x = 1; x < 64; x++)
+	{
+		Col2RGB8_LessPrecision[x] = Col2RGB8_2[x-1];
+		for (y = 0; y < 256; y++)
+		{
+			Col2RGB8_2[x-1][y] = Col2RGB8[x][y] & 0x3feffbff;
+		}
+	}
+	Col2RGB8_LessPrecision[0] = Col2RGB8[0];
+	Col2RGB8_LessPrecision[64] = Col2RGB8[64];
+
+	// create the inverse swizzled palette
+	for (x = 0; x < 65; x++)
+		for (y = 0; y < 256; y++)
+		{
+			Col2RGB8_Inverse[x][y] = (((((255-palette[y].r)*x)>>4)<<20) |
+									  (((255-palette[y].g)*x)>>4) |
+									  ((((255-palette[y].b)*x)>>4)<<10)) & 0x3feffbff;
+		}
+}
+
+//==========================================================================
+//
+// DCanvas :: CalcGamma
+//
+//==========================================================================
+
+void DCanvas::CalcGamma (float gamma, BYTE gammalookup[256])
+{
+	// I found this formula on the web at
+	// <http://panda.mostang.com/sane/sane-gamma.html>,
+	// but that page no longer exits.
+
+	double invgamma = 1.f / gamma;
+	int i;
+
+	for (i = 0; i < 256; i++)
+	{
+		gammalookup[i] = (BYTE)(255.0 * pow (i / 255.0, invgamma));
+	}
+}
+
+//==========================================================================
+//
+// DSimpleCanvas Constructor
+//
+// A simple canvas just holds a buffer in main memory.
+//
+//==========================================================================
+
+DSimpleCanvas::DSimpleCanvas (int width, int height)
+	: DCanvas (width, height)
+{
+	// Making the pitch a power of 2 is very bad for performance
+	// Try to maximize the number of cache lines that can be filled
+	// for each column drawing operation by making the pitch slightly
+	// longer than the width. The values used here are all based on
+	// empirical evidence.
+
+	if (width <= 640)
+	{
+		// For low resolutions, just keep the pitch the same as the width.
+		// Some speedup can be seen using the technique below, but the speedup
+		// is so marginal that I don't consider it worthwhile.
+		Pitch = width;
+	}
+	else
+	{
+		// If we couldn't figure out the CPU's L1 cache line size, assume
+		// it's 32 bytes wide.
+		if (CPU.DataL1LineSize == 0)
+		{
+			CPU.DataL1LineSize = 32;
+		}
+		// The Athlon and P3 have very different caches, apparently.
+		// I am going to generalize the Athlon's performance to all AMD
+		// processors and the P3's to all non-AMD processors. I don't know
+		// how smart that is, but I don't have a vast plethora of
+		// processors to test with.
+		if (CPU.bIsAMD)
+		{
+			Pitch = width + CPU.DataL1LineSize;
+		}
+		else
+		{
+			Pitch = width + MAX(0, CPU.DataL1LineSize - 8);
+		}
+	}
+	MemBuffer = new BYTE[Pitch * height];
+	memset (MemBuffer, 0, Pitch * height);
+}
+
+//==========================================================================
+//
+// DSimpleCanvas Destructor
+//
+//==========================================================================
+
+DSimpleCanvas::~DSimpleCanvas ()
+{
+	if (MemBuffer != NULL)
+	{
+		delete[] MemBuffer;
+		MemBuffer = NULL;
+	}
+}
+
+//==========================================================================
+//
+// DSimpleCanvas :: IsValid
+//
+//==========================================================================
+
+bool DSimpleCanvas::IsValid ()
+{
+	return (MemBuffer != NULL);
+}
+
+//==========================================================================
+//
+// DSimpleCanvas :: Lock
+//
+//==========================================================================
+
+bool DSimpleCanvas::Lock (bool)
+{
+	if (LockCount == 0)
+	{
+		Buffer = MemBuffer;
+	}
+	LockCount++;
+	return false;		// System surfaces are never lost
+}
+
+//==========================================================================
+//
+// DSimpleCanvas :: Unlock
+//
+//==========================================================================
+
+void DSimpleCanvas::Unlock ()
+{
+	if (--LockCount <= 0)
+	{
+		LockCount = 0;
+		Buffer = NULL;	// Enforce buffer access only between Lock/Unlock
+	}
+}
+
+//==========================================================================
+//
+// DFrameBuffer Constructor
+//
+// A frame buffer canvas is the most common and represents the image that
+// gets drawn to the screen.
+//
+//==========================================================================
+
+DFrameBuffer::DFrameBuffer (int width, int height)
+	: DSimpleCanvas (width, height)
+{
+	LastMS = LastSec = FrameCount = LastCount = LastTic = 0;
+	Accel2D = false;
+}
+
+//==========================================================================
+//
+// DFrameBuffer :: DrawRateStuff
+//
+// Draws the fps counter, dot ticker, and palette debug.
+//
+//==========================================================================
+
+void DFrameBuffer::DrawRateStuff ()
+{
+	// Draws frame time and cumulative fps
+	if (vid_fps)
+	{
+		DWORD ms = I_FPSTime();
+		DWORD howlong = ms - LastMS;
+		if ((signed)howlong >= 0)
+		{
+			char fpsbuff[40];
+			int chars;
+			int rate_x;
+
+			chars = mysnprintf (fpsbuff, countof(fpsbuff), "%2u ms (%3u fps)", howlong, LastCount);
+			rate_x = Width - ConFont->StringWidth(&fpsbuff[0]);
+			Clear (rate_x, 0, Width, ConFont->GetHeight(), GPalette.BlackIndex, 0);
+			DrawText (ConFont, CR_WHITE, rate_x, 0, (char *)&fpsbuff[0], TAG_DONE);
+
+			DWORD thisSec = ms/1000;
+			if (LastSec < thisSec)
+			{
+				LastCount = FrameCount / (thisSec - LastSec);
+				LastSec = thisSec;
+				FrameCount = 0;
+			}
+			FrameCount++;
+		}
+		LastMS = ms;
+	}
+
+	// draws little dots on the bottom of the screen
+	if (ticker)
+	{
+		int i = I_GetTime(false);
+		int tics = i - LastTic;
+		BYTE *buffer = GetBuffer();
+
+		LastTic = i;
+		if (tics > 20) tics = 20;
+
+		// Buffer can be NULL if we're doing hardware accelerated 2D
+		if (buffer != NULL)
+		{
+			buffer += (GetHeight()-1) * GetPitch();
+			
+			for (i = 0; i < tics*2; i += 2)		buffer[i] = 0xff;
+			for ( ; i < 20*2; i += 2)			buffer[i] = 0x00;
+		}
+		else
+		{
+			for (i = 0; i < tics*2; i += 2)		Clear(i, Height-1, i+1, Height, 255, 0);
+			for ( ; i < 20*2; i += 2)			Clear(i, Height-1, i+1, Height, 0, 0);
+		}
+	}
+
+	// draws the palette for debugging
+	if (vid_showpalette)
+	{
+		// This used to just write the palette to the display buffer.
+		// With hardware-accelerated 2D, that doesn't work anymore.
+		// Drawing it as a texture does and continues to show how
+		// well the PalTex shader is working.
+		static FPaletteTester palette;
+
+		palette.SetTranslation(vid_showpalette);
+		DrawTexture(&palette, 0, 0,
+			DTA_DestWidth, 16*7,
+			DTA_DestHeight, 16*7,
+			DTA_Masked, false,
+			TAG_DONE);
+	}
+}
+
+//==========================================================================
+//
+// FPaleteTester Constructor
+//
+// This is just a 16x16 image with every possible color value.
+//
+//==========================================================================
+
+FPaletteTester::FPaletteTester()
+{
+	Width = 16;
+	Height = 16;
+	WidthBits = 4;
+	HeightBits = 4;
+	WidthMask = 15;
+	CurTranslation = 0;
+	WantTranslation = 1;
+	MakeTexture();
+}
+
+//==========================================================================
+//
+// FPaletteTester :: CheckModified
+//
+//==========================================================================
+
+bool FPaletteTester::CheckModified()
+{
+	return CurTranslation != WantTranslation;
+}
+
+//==========================================================================
+//
+// FPaletteTester :: SetTranslation
+//
+//==========================================================================
+
+void FPaletteTester::SetTranslation(int num)
+{
+	if (num >= 1 && num <= 9)
+	{
+		WantTranslation = num;
+	}
+}
+
+//==========================================================================
+//
+// FPaletteTester :: Unload
+//
+//==========================================================================
+
+void FPaletteTester::Unload()
+{
+}
+
+//==========================================================================
+//
+// FPaletteTester :: GetColumn
+//
+//==========================================================================
+
+const BYTE *FPaletteTester::GetColumn (unsigned int column, const Span **spans_out)
+{
+	if (CurTranslation != WantTranslation)
+	{
+		MakeTexture();
+	}
+	column &= 15;
+	if (spans_out != NULL)
+	{
+		*spans_out = DummySpan;
+	}
+	return Pixels + column*16;
+}
+
+//==========================================================================
+//
+// FPaletteTester :: GetPixels
+//
+//==========================================================================
+
+const BYTE *FPaletteTester::GetPixels ()
+{
+	if (CurTranslation != WantTranslation)
+	{
+		MakeTexture();
+	}
+	return Pixels;
+}
+
+//==========================================================================
+//
+// FPaletteTester :: MakeTexture
+//
+//==========================================================================
+
+void FPaletteTester::MakeTexture()
+{
+	int i, j, k, t;
+	BYTE *p;
+
+	t = WantTranslation;
+	p = Pixels;
+	k = 0;
+	for (i = 0; i < 16; ++i)
+	{
+		for (j = 0; j < 16; ++j)
+		{
+			*p++ = (t > 1) ? translationtables[TRANSLATION_Standard][t - 2]->Remap[k] : k;
+			k += 16;
+		}
+		k -= 255;
+	}
+	CurTranslation = t;
+}
+
+//==========================================================================
+//
+// DFrameBuffer :: CopyFromBuff
+//
+// Copies pixels from main memory to video memory. This is only used by
+// DDrawFB.
+//
+//==========================================================================
+
+void DFrameBuffer::CopyFromBuff (BYTE *src, int srcPitch, int width, int height, BYTE *dest)
+{
+	if (Pitch == width && Pitch == Width && srcPitch == width)
+	{
+		memcpy (dest, src, Width * Height);
+	}
+	else
+	{
+		for (int y = 0; y < height; y++)
+		{
+			memcpy (dest, src, width);
+			dest += Pitch;
+			src += srcPitch;
+		}
+	}
+}
+
+//==========================================================================
+//
+// DFrameBuffer :: SetVSync
+//
+// Turns vertical sync on and off, if supported.
+//
+//==========================================================================
+
+void DFrameBuffer::SetVSync (bool vsync)
+{
+}
+
+//==========================================================================
+//
+// DFrameBuffer :: NewRefreshRate
+//
+// Sets the fullscreen display to the new refresh rate in vid_refreshrate,
+// if possible.
+//
+//==========================================================================
+
+void DFrameBuffer::NewRefreshRate ()
+{
+}
+
+//==========================================================================
+//
+// DFrameBuffer :: SetBlendingRect
+//
+// Defines the area of the screen containing the 3D view.
+//
+//==========================================================================
+
+void DFrameBuffer::SetBlendingRect (int x1, int y1, int x2, int y2)
+{
+}
+
+//==========================================================================
+//
+// DFrameBuffer :: Begin2D
+//
+// Signal that 3D rendering is complete, and the rest of the operations on
+// the canvas until Unlock() will be 2D ones.
+//
+//==========================================================================
+
+bool DFrameBuffer::Begin2D (bool copy3d)
+{
+	return false;
+}
+
+//==========================================================================
+//
+// DFrameBuffer :: DrawBlendingRect
+//
+// In hardware 2D modes, the blending rect needs to be drawn separately
+// from transferring the 3D scene to video memory, because the weapon
+// sprite is drawn on top of that.
+//
+//==========================================================================
+
+void DFrameBuffer::DrawBlendingRect()
+{
+}
+
+//==========================================================================
+//
+// DFrameBuffer :: CreateTexture
+//
+// Creates a native texture for a game texture, if supported.
+//
+//==========================================================================
+
+FNativeTexture *DFrameBuffer::CreateTexture(FTexture *gametex, bool wrapping)
+{
+	return NULL;
+}
+
+//==========================================================================
+//
+// DFrameBuffer :: CreatePalette
+//
+// Creates a native palette from a remap table, if supported.
+//
+//==========================================================================
+
+FNativePalette *DFrameBuffer::CreatePalette(FRemapTable *remap)
+{
+	return NULL;
+}
+
+//==========================================================================
+//
+// DFrameBuffer :: WipeStartScreen
+//
+// Grabs a copy of the screen currently displayed to serve as the initial
+// frame of a screen wipe. Also determines which screenwipe will be
+// performed.
+//
+//==========================================================================
+
+bool DFrameBuffer::WipeStartScreen(int type)
+{
+	return wipe_StartScreen(type);
+}
+
+//==========================================================================
+//
+// DFrameBuffer :: WipeEndScreen
+//
+// Grabs a copy of the most-recently drawn, but not yet displayed, screen
+// to serve as the final frame of a screen wipe.
+//
+//==========================================================================
+
+void DFrameBuffer::WipeEndScreen()
+{
+	wipe_EndScreen();
+	Unlock();
+}
+
+//==========================================================================
+//
+// DFrameBuffer :: WipeDo
+//
+// Draws one frame of a screenwipe. Should be called no more than 35
+// times per second. If called less than that, ticks indicates how many
+// ticks have passed since the last call.
+//
+//==========================================================================
+
+bool DFrameBuffer::WipeDo(int ticks)
+{
+	Lock(true);
+	return wipe_ScreenWipe(ticks);
+}
+
+//==========================================================================
+//
+// DFrameBuffer :: WipeCleanup
+//
+//==========================================================================
+
+void DFrameBuffer::WipeCleanup()
+{
+	wipe_Cleanup();
+}
+
+//===========================================================================
+//
+// Create texture hitlist
+//
+//===========================================================================
+
+void DFrameBuffer::GetHitlist(BYTE *hitlist)
+{
+	BYTE *spritelist;
+	int i;
+
+	spritelist = new BYTE[sprites.Size()];
+	
+	// Precache textures (and sprites).
+	memset (spritelist, 0, sprites.Size());
+
+	{
+		AActor *actor;
+		TThinkerIterator<AActor> iterator;
+
+		while ( (actor = iterator.Next ()) )
+			spritelist[actor->sprite] = 1;
+	}
+
+	for (i = (int)(sprites.Size () - 1); i >= 0; i--)
+	{
+		if (spritelist[i])
+		{
+			int j, k;
+			for (j = 0; j < sprites[i].numframes; j++)
+			{
+				const spriteframe_t *frame = &SpriteFrames[sprites[i].spriteframes + j];
+
+				for (k = 0; k < 16; k++)
+				{
+					FTextureID pic = frame->Texture[k];
+					if (pic.isValid())
+					{
+						hitlist[pic.GetIndex()] = FTextureManager::HIT_Sprite;
+					}
+				}
+			}
+		}
+	}
+
+	delete[] spritelist;
+
+	for (i = numsectors - 1; i >= 0; i--)
+	{
+		hitlist[sectors[i].GetTexture(sector_t::floor).GetIndex()] = 
+			hitlist[sectors[i].GetTexture(sector_t::ceiling).GetIndex()] |= FTextureManager::HIT_Flat;
+	}
+
+	for (i = numsides - 1; i >= 0; i--)
+	{
+		hitlist[sides[i].GetTexture(side_t::top).GetIndex()] =
+		hitlist[sides[i].GetTexture(side_t::mid).GetIndex()] =
+		hitlist[sides[i].GetTexture(side_t::bottom).GetIndex()] |= FTextureManager::HIT_Wall;
+	}
+
+	// Sky texture is always present.
+	// Note that F_SKY1 is the name used to
+	//	indicate a sky floor/ceiling as a flat,
+	//	while the sky texture is stored like
+	//	a wall texture, with an episode dependant
+	//	name.
+
+	if (sky1texture.isValid())
+	{
+		hitlist[sky1texture.GetIndex()] |= FTextureManager::HIT_Sky;
+	}
+	if (sky2texture.isValid())
+	{
+		hitlist[sky2texture.GetIndex()] |= FTextureManager::HIT_Sky;
+	}
+}
+
+//==========================================================================
+//
+// DFrameBuffer :: GameRestart
+//
+//==========================================================================
+
+void DFrameBuffer::GameRestart()
+{
+}
+
+//===========================================================================
+//
+// 
+//
+//===========================================================================
+
+FNativePalette::~FNativePalette()
+{
+}
+
+FNativeTexture::~FNativeTexture()
+{
+}
+
+bool FNativeTexture::CheckWrapping(bool wrapping)
+{
+	return true;
+}
+
+CCMD(clean)
+{
+	Printf ("CleanXfac: %d\nCleanYfac: %d\n", CleanXfac, CleanYfac);
+}
 
 //
-// V_DrawBlock
-// Draw a linear block of pixels into the view buffer.
+// V_SetResolution
 //
-void
-V_DrawBlock
-( int		x,
-  int		y,
-  int		scrn,
-  int		width,
-  int		height,
-  byte*		src ) 
-{ 
-    byte*	dest; 
-	 
-#ifdef RANGECHECK 
-    if (x<0
-	||x+width >SCREENWIDTH
-	|| y<0
-	|| y+height>SCREENHEIGHT
-	|| (unsigned)scrn>4 )
-    {
-	I_Error ("Bad V_DrawBlock");
-    }
-#endif 
- 
-    V_MarkRect (x, y, width, height); 
- 
-    dest = ::g->screens[scrn] + y*SCREENWIDTH+x; 
+bool V_DoModeSetup (int width, int height, int bits)
+{
+	DFrameBuffer *buff = I_SetMode (width, height, screen);
+	int cx1, cx2;
 
-    while (height--) 
-    { 
-	memcpy(dest, src, width); 
-	src += width; 
-	dest += SCREENWIDTH; 
-    } 
-} 
- 
+	if (buff == NULL)
+	{
+		return false;
+	}
 
+	screen = buff;
+	GC::WriteBarrier(screen);
+	screen->SetGamma (Gamma);
 
-//
-// V_GetBlock
-// Gets a linear block of pixels from the view buffer.
-//
-void
-V_GetBlock
-( int		x,
-  int		y,
-  int		scrn,
-  int		width,
-  int		height,
-  byte*		dest ) 
-{ 
-    byte*	src; 
-	 
-#ifdef RANGECHECK 
-    if (x<0
-	||x+width >SCREENWIDTH
-	|| y<0
-	|| y+height>SCREENHEIGHT
-	|| (unsigned)scrn>4 )
-    {
-	I_Error ("Bad V_DrawBlock");
-    }
-#endif 
- 
-    src = ::g->screens[scrn] + y*SCREENWIDTH+x; 
+	// Load fonts now so they can be packed into textures straight away,
+	// if D3DFB is being used for the display.
+	FFont::StaticPreloadFonts();
 
-    while (height--) 
-    { 
-	memcpy(dest, src, width); 
-	src += SCREENWIDTH; 
-	dest += width; 
-    } 
-} 
+	V_CalcCleanFacs(320, 200, width, height, &CleanXfac, &CleanYfac, &cx1, &cx2);
+
+	CleanWidth = width / CleanXfac;
+	CleanHeight = height / CleanYfac;
+	assert(CleanWidth >= 320);
+	assert(CleanHeight >= 200);
+
+	if (width < 800 || width >= 960)
+	{
+		if (cx1 < cx2)
+		{
+			// Special case in which we don't need to scale down.
+			CleanXfac_1 = 
+			CleanYfac_1 = cx1;
+		}
+		else
+		{
+			CleanXfac_1 = MAX(CleanXfac - 1, 1);
+			CleanYfac_1 = MAX(CleanYfac - 1, 1);
+			// On larger screens this is not enough so make sure it's at most 3/4 of the screen's width
+			while (CleanXfac_1 * 320 > screen->GetWidth()*3/4 && CleanXfac_1 > 2)
+			{
+				CleanXfac_1--;
+				CleanYfac_1--;
+			}
+		}
+		CleanWidth_1 = width / CleanXfac_1;
+		CleanHeight_1 = height / CleanYfac_1;
+	}
+	else // if the width is between 800 and 960 the ratio between the screensize and CleanXFac-1 becomes too large.
+	{
+		CleanXfac_1 = CleanXfac;
+		CleanYfac_1 = CleanYfac;
+		CleanWidth_1 = CleanWidth;
+		CleanHeight_1 = CleanHeight;
+	}
 
 
+	DisplayWidth = width;
+	DisplayHeight = height;
+	DisplayBits = bits;
 
+	R_OldBlend = ~0;
+	Renderer->OnModeSet();
+	
+	M_RefreshModesList ();
+
+	return true;
+}
+
+void V_CalcCleanFacs (int designwidth, int designheight, int realwidth, int realheight, int *cleanx, int *cleany, int *_cx1, int *_cx2)
+{
+	int ratio;
+	int cwidth;
+	int cheight;
+	int cx1, cy1, cx2, cy2;
+
+	ratio = CheckRatio(realwidth, realheight);
+	if (ratio & 4)
+	{
+		cwidth = realwidth;
+		cheight = realheight * BaseRatioSizes[ratio][3] / 48;
+	}
+	else
+	{
+		cwidth = realwidth * BaseRatioSizes[ratio][3] / 48;
+		cheight = realheight;
+	}
+	// Use whichever pair of cwidth/cheight or width/height that produces less difference
+	// between CleanXfac and CleanYfac.
+	cx1 = MAX(cwidth / designwidth, 1);
+	cy1 = MAX(cheight / designheight, 1);
+	cx2 = MAX(realwidth / designwidth, 1);
+	cy2 = MAX(realheight / designheight, 1);
+	if (abs(cx1 - cy1) <= abs(cx2 - cy2))
+	{ // e.g. 640x360 looks better with this.
+		*cleanx = cx1;
+		*cleany = cy1;
+	}
+	else
+	{ // e.g. 720x480 looks better with this.
+		*cleanx = cx2;
+		*cleany = cy2;
+	}
+
+	if (*cleanx < *cleany)
+		*cleany = *cleanx;
+	else
+		*cleanx = *cleany;
+
+	if (_cx1 != NULL)	*_cx1 = cx1;
+	if (_cx2 != NULL)	*_cx2 = cx2;
+}
+
+bool IVideo::SetResolution (int width, int height, int bits)
+{
+	int oldwidth, oldheight;
+	int oldbits;
+
+	if (screen)
+	{
+		oldwidth = SCREENWIDTH;
+		oldheight = SCREENHEIGHT;
+		oldbits = DisplayBits;
+	}
+	else
+	{ // Harmless if screen wasn't allocated
+		oldwidth = width;
+		oldheight = height;
+		oldbits = bits;
+	}
+
+	I_ClosestResolution (&width, &height, bits);
+	if (!I_CheckResolution (width, height, bits))
+	{ // Try specified resolution
+		if (!I_CheckResolution (oldwidth, oldheight, oldbits))
+		{ // Try previous resolution (if any)
+	   		return false;
+		}
+		else
+		{
+			width = oldwidth;
+			height = oldheight;
+			bits = oldbits;
+		}
+	}
+	return V_DoModeSetup (width, height, bits);
+}
+
+CCMD (vid_setmode)
+{
+	bool	goodmode = false;
+	int		width = 0, height = SCREENHEIGHT;
+	int		bits = DisplayBits;
+
+	if (argv.argc() > 1)
+	{
+		width = atoi (argv[1]);
+		if (argv.argc() > 2)
+		{
+			height = atoi (argv[2]);
+			if (argv.argc() > 3)
+			{
+				bits = atoi (argv[3]);
+			}
+		}
+	}
+
+	if (width && I_CheckResolution (width, height, bits))
+	{
+		goodmode = true;
+	}
+
+	if (goodmode)
+	{
+		// The actual change of resolution will take place
+		// near the beginning of D_Display().
+		if (gamestate != GS_STARTUP)
+		{
+			setmodeneeded = true;
+			NewWidth = width;
+			NewHeight = height;
+			NewBits = bits;
+		}
+	}
+	else if (width)
+	{
+		Printf ("Unknown resolution %d x %d x %d\n", width, height, bits);
+	}
+	else
+	{
+		Printf ("Usage: vid_setmode <width> <height> <mode>\n");
+	}
+}
 
 //
 // V_Init
-// 
-void V_Init (void) 
+//
+
+void V_Init (bool restart) 
 { 
-    int		i;
-    byte*	base;
+	const char *i;
+	int width, height, bits;
 
-    // stick these in low dos memory on PCs
+	atterm (V_Shutdown);
 
-    base = (byte*)DoomLib::Z_Malloc(SCREENWIDTH*SCREENHEIGHT*4, PU_STATIC, 0);
+	// [RH] Initialize palette management
+	InitPalette ();
 
-    for (i=0 ; i<4 ; i++)
-		::g->screens[i] = base + i*SCREENWIDTH*SCREENHEIGHT;
+	if (!restart)
+	{
+		width = height = bits = 0;
+
+		if ( (i = Args->CheckValue ("-width")) )
+			width = atoi (i);
+
+		if ( (i = Args->CheckValue ("-height")) )
+			height = atoi (i);
+
+		if ( (i = Args->CheckValue ("-bits")) )
+			bits = atoi (i);
+
+		if (width == 0)
+		{
+			if (height == 0)
+			{
+				width = vid_defwidth;
+				height = vid_defheight;
+			}
+			else
+			{
+				width = (height * 8) / 6;
+			}
+		}
+		else if (height == 0)
+		{
+			height = (width * 6) / 8;
+		}
+
+		if (bits == 0)
+		{
+			bits = vid_defbits;
+		}
+		screen = new DDummyFrameBuffer (width, height);
+	}
+	// Update screen palette when restarting
+	else
+	{
+		PalEntry *palette = screen->GetPalette ();
+		for (int i = 0; i < 256; ++i)
+			*palette++ = GPalette.BaseColors[i];
+		screen->UpdatePalette();
+	}
+
+	BuildTransTable (GPalette.BaseColors);
 }
 
+void V_Init2()
+{
+	assert (screen->IsKindOf(RUNTIME_CLASS(DDummyFrameBuffer)));
+	int width = screen->GetWidth();
+	int height = screen->GetHeight();
+	float gamma = static_cast<DDummyFrameBuffer *>(screen)->Gamma;
+
+	{
+		DFrameBuffer *s = screen;
+		screen = NULL;
+		s->ObjectFlags |= OF_YesReallyDelete;
+		delete s;
+	}
+
+	I_InitGraphics();
+	I_ClosestResolution (&width, &height, 8);
+
+	if (!Video->SetResolution (width, height, 8))
+		I_FatalError ("Could not set resolution to %d x %d x %d", width, height, 8);
+	else
+		Printf ("Resolution: %d x %d\n", SCREENWIDTH, SCREENHEIGHT);
+
+	screen->SetGamma (gamma);
+	Renderer->RemapVoxels();
+	FBaseCVar::ResetColors ();
+	C_NewModeAdjust();
+	M_InitVideoModesMenu();
+	V_SetBorderNeedRefresh();
+	setsizeneeded = true;
+}
+
+void V_Shutdown()
+{
+	if (screen)
+	{
+		DFrameBuffer *s = screen;
+		screen = NULL;
+		s->ObjectFlags |= OF_YesReallyDelete;
+		delete s;
+	}
+	V_ClearFonts();
+}
+
+EXTERN_CVAR (Bool, vid_tft)
+CUSTOM_CVAR (Bool, vid_nowidescreen, false, CVAR_GLOBALCONFIG|CVAR_ARCHIVE)
+{
+	setsizeneeded = true;
+	if (StatusBar != NULL)
+	{
+		StatusBar->ScreenSizeChanged();
+	}
+}
+
+CUSTOM_CVAR (Int, vid_aspect, 0, CVAR_GLOBALCONFIG|CVAR_ARCHIVE)
+{
+	setsizeneeded = true;
+	if (StatusBar != NULL)
+	{
+		StatusBar->ScreenSizeChanged();
+	}
+}
+
+// Tries to guess the physical dimensions of the screen based on the
+// screen's pixel dimensions. Can return:
+// 0: 4:3
+// 1: 16:9
+// 2: 16:10
+// 3: 17:10
+// 4: 5:4
+int CheckRatio (int width, int height, int *trueratio)
+{
+	int fakeratio = -1;
+	int ratio;
+
+	if ((vid_aspect >= 1) && (vid_aspect <= 5))
+	{
+		// [SP] User wants to force aspect ratio; let them.
+		fakeratio = int(vid_aspect);
+		if (fakeratio == 3)
+		{
+			fakeratio = 0;
+		}
+		else if (fakeratio == 5)
+		{
+			fakeratio = 3;
+		}
+	}
+	if (vid_nowidescreen)
+	{
+		if (!vid_tft)
+		{
+			fakeratio = 0;
+		}
+		else
+		{
+			fakeratio = (height * 5/4 == width) ? 4 : 0;
+		}
+	}
+	// If the size is approximately 16:9, consider it so.
+	if (abs (height * 16/9 - width) < 10)
+	{
+		ratio = 1;
+	}
+	// Consider 17:10 as well.
+	else if (abs (height * 17/10 - width) < 10)
+	{
+		ratio = 3;
+	}
+	// 16:10 has more variance in the pixel dimensions. Grr.
+	else if (abs (height * 16/10 - width) < 60)
+	{
+		// 320x200 and 640x400 are always 4:3, not 16:10
+		if ((width == 320 && height == 200) || (width == 640 && height == 400))
+		{
+			ratio = 0;
+		}
+		else
+		{
+			ratio = 2;
+		}
+	}
+	// Unless vid_tft is set, 1280x1024 is 4:3, not 5:4.
+	else if (height * 5/4 == width && vid_tft)
+	{
+		ratio = 4;
+	}
+	// Assume anything else is 4:3. (Which is probably wrong these days...)
+	else
+	{
+		ratio = 0;
+	}
+
+	if (trueratio != NULL)
+	{
+		*trueratio = ratio;
+	}
+	return (fakeratio >= 0) ? fakeratio : ratio;
+}
+
+// First column: Base width
+// Second column: Base height (used for wall visibility multiplier)
+// Third column: Psprite offset (needed for "tallscreen" modes)
+// Fourth column: Width or height multiplier
+
+// For widescreen aspect ratio x:y ...
+//     base_width = 240 * x / y
+//     multiplier = 320 / base_width
+//     base_height = 200 * multiplier
+const int BaseRatioSizes[5][4] =
+{
+	{  960, 600, 0,                   48 },			//  4:3   320,      200,      multiplied by three
+	{ 1280, 450, 0,                   48*3/4 },		// 16:9   426.6667, 150,      multiplied by three
+	{ 1152, 500, 0,                   48*5/6 },		// 16:10  386,      166.6667, multiplied by three
+	{ 1224, 471, 0,                   48*40/51 },	// 17:10  408,		156.8627, multiplied by three
+	{  960, 640, (int)(6.5*FRACUNIT), 48*15/16 }	//  5:4   320,      213.3333, multiplied by three
+};
+
+void IVideo::DumpAdapters ()
+{
+	Printf("Multi-monitor support unavailable.\n");
+}
+
+CCMD(vid_listadapters)
+{
+	if (Video != NULL)
+		Video->DumpAdapters();
+}

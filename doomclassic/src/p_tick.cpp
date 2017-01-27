@@ -1,169 +1,141 @@
-/*
-===========================================================================
+// Emacs style mode select	 -*- C++ -*- 
+//-----------------------------------------------------------------------------
+//
+// $Id:$
+//
+// Copyright (C) 1993-1996 by id Software, Inc.
+//
+// This source is available for distribution and/or modification
+// only under the terms of the DOOM Source Code License as
+// published by id Software. All rights reserved.
+//
+// The source is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// FITNESS FOR A PARTICULAR PURPOSE. See the DOOM Source Code License
+// for more details.
+//
+// $Log:$
+//
+// DESCRIPTION:
+//		Ticker.
+//
+//-----------------------------------------------------------------------------
 
-Doom 3 BFG Edition GPL Source Code
-Copyright (C) 1993-2012 id Software LLC, a ZeniMax Media company. 
 
-This file is part of the Doom 3 BFG Edition GPL Source Code ("Doom 3 BFG Edition Source Code").  
-
-Doom 3 BFG Edition Source Code is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-Doom 3 BFG Edition Source Code is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with Doom 3 BFG Edition Source Code.  If not, see <http://www.gnu.org/licenses/>.
-
-In addition, the Doom 3 BFG Edition Source Code is also subject to certain additional terms. You should have received a copy of these additional terms immediately following the terms and conditions of the GNU General Public License which accompanied the Doom 3 BFG Edition Source Code.  If not, please request a copy in writing from id Software at the address below.
-
-If you have questions concerning this license or the applicable additional terms, you may contact in writing id Software LLC, c/o ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
-
-===========================================================================
-*/
-
-#include "Precompiled.h"
-#include "globaldata.h"
-
-#include "z_zone.h"
 #include "p_local.h"
-
+#include "p_effect.h"
+#include "c_console.h"
+#include "b_bot.h"
+#include "s_sound.h"
 #include "doomstat.h"
+#include "sbar.h"
+#include "r_data/r_interpolate.h"
+#include "i_sound.h"
+#include "g_level.h"
 
+extern gamestate_t wipegamestate;
 
-
+//==========================================================================
 //
-// THINKERS
-// All thinkers should be allocated by Z_Malloc
-// so they can be operated on uniformly.
-// The actual structures will vary in size,
-// but the first element must be thinker_t.
+// P_CheckTickerPaused
 //
-
-
-
-// Both the head and tail of the thinker list.
-
-
+// Returns true if the ticker should be paused. In that cause, it also
+// pauses sound effects and possibly music. If the ticker should not be
+// paused, then it returns false but does not unpause anything.
 //
-// P_InitThinkers
-//
-void P_InitThinkers (void)
+//==========================================================================
+
+bool P_CheckTickerPaused ()
 {
-    ::g->thinkercap.prev = ::g->thinkercap.next  = &::g->thinkercap;
+	// pause if in menu or console and at least one tic has been run
+	if ( !netgame
+		 && gamestate != GS_TITLELEVEL
+		 && ((menuactive != MENU_Off && menuactive != MENU_OnNoPause) ||
+			 ConsoleState == c_down || ConsoleState == c_falling)
+		 && !demoplayback
+		 && !demorecording
+		 && players[consoleplayer].viewz != 1
+		 && wipegamestate == gamestate)
+	{
+		S_PauseSound (!(level.flags2 & LEVEL2_PAUSE_MUSIC_IN_MENUS), false);
+		return true;
+	}
+	return false;
 }
-
-
-
-
-//
-// P_AddThinker
-// Adds a new thinker at the end of the list.
-//
-void P_AddThinker (thinker_t* thinker)
-{
-    ::g->thinkercap.prev->next = thinker;
-    thinker->next = &::g->thinkercap;
-    thinker->prev = ::g->thinkercap.prev;
-    ::g->thinkercap.prev = thinker;
-}
-
-
-
-//
-// P_RemoveThinker
-// Deallocation is lazy -- it will not actually be freed
-// until its thinking turn comes up.
-//
-void P_RemoveThinker (thinker_t* thinker)
-{
-  // FIXME: NOP.
-  thinker->function.acv = (actionf_v)(-1);
-}
-
-
-
-//
-// P_AllocateThinker
-// Allocates memory and adds a new thinker at the end of the list.
-//
-void P_AllocateThinker (thinker_t*	thinker)
-{
-}
-
-
-
-//
-// P_RunThinkers
-//
-void P_RunThinkers (void)
-{
-    thinker_t*	currentthinker;
-
-    currentthinker = ::g->thinkercap.next;
-    while (currentthinker != &::g->thinkercap)
-    {
-		 if ( currentthinker->function.acv == (actionf_v)(-1) )
-		 {
-			 // time to remove it
-			 currentthinker->next->prev = currentthinker->prev;
-			 currentthinker->prev->next = currentthinker->next;
-			 Z_Free(currentthinker);
-		 }
-		 else
-		 {
-			 if (currentthinker->function.acp1)
-				 currentthinker->function.acp1 ((mobj_t*)currentthinker);
-		 }
-	currentthinker = currentthinker->next;
-    }
-}
-
-
 
 //
 // P_Ticker
 //
-extern byte demoversion;
-
 void P_Ticker (void)
 {
-    int		i;
-    
-    // run the tic
-    if (::g->paused)
-		return;
+	int i;
 
-	// don't think during wipe
-	if ( !::g->netgame && (!::g->demoplayback || demoversion == VERSION ) && ::g->wipe ) {
-		return;
+	interpolator.UpdateInterpolations ();
+	r_NoInterpolate = true;
+
+	if (!demoplayback)
+	{
+		// This is a separate slot from the wipe in D_Display(), because this
+		// is delayed slightly due to latency. (Even on a singleplayer game!)
+//		GSnd->SetSfxPaused(!!playerswiping, 2);
 	}
 
-    // pause if in menu and at least one tic has been run
-    if ( !::g->netgame
-	 && ::g->menuactive
-	 && !::g->demoplayback
-	 && ::g->players[::g->consoleplayer].viewz != 1)
-    {
-	return;
-    }
+	// run the tic
+	if (paused || P_CheckTickerPaused())
+		return;
 
+	P_NewPspriteTick();
 
-	for (i=0 ; i<MAXPLAYERS ; i++) {
-		if (::g->playeringame[i]) {
-		    P_PlayerThink (&::g->players[i]);
+	// [RH] Frozen mode is only changed every 4 tics, to make it work with A_Tracer().
+	if ((level.time & 3) == 0)
+	{
+		if (bglobal.changefreeze)
+		{
+			bglobal.freeze ^= 1;
+			bglobal.changefreeze = 0;
 		}
 	}
 
-    P_RunThinkers ();
-    P_UpdateSpecials ();
-    P_RespawnSpecials ();
+	// [BC] Do a quick check to see if anyone has the freeze time power. If they do,
+	// then don't resume the sound, since one of the effects of that power is to shut
+	// off the music.
+	for (i = 0; i < MAXPLAYERS; i++ )
+	{
+		if (playeringame[i] && players[i].timefreezer != 0)
+			break;
+	}
 
-    // for par times
-    ::g->leveltime++;	
+	if ( i == MAXPLAYERS )
+		S_ResumeSound (false);
+
+	P_ResetSightCounters (false);
+
+	// Since things will be moving, it's okay to interpolate them in the renderer.
+	r_NoInterpolate = false;
+
+	if (!bglobal.freeze && !(level.flags2 & LEVEL2_FROZEN))
+	{
+		P_ThinkParticles ();	// [RH] make the particles think
+	}
+
+	for (i = 0; i<MAXPLAYERS; i++)
+		if (playeringame[i] &&
+			/*Added by MC: Freeze mode.*/!(bglobal.freeze && players[i].Bot != NULL))
+			P_PlayerThink (&players[i]);
+
+	StatusBar->Tick ();		// [RH] moved this here
+	level.Tick ();			// [RH] let the level tick
+	DThinker::RunThinkers ();
+
+	//if added by MC: Freeze mode.
+	if (!bglobal.freeze && !(level.flags2 & LEVEL2_FROZEN))
+	{
+		P_UpdateSpecials ();
+		P_RunEffects ();	// [RH] Run particle effects
+	}
+
+	// for par times
+	level.time++;
+	level.maptime++;
+	level.totaltime++;
 }
-

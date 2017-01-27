@@ -1,66 +1,65 @@
-/*
-===========================================================================
+// Emacs style mode select	 -*- C++ -*- 
+//-----------------------------------------------------------------------------
+//
+// $Id:$
+//
+// Copyright (C) 1993-1996 by id Software, Inc.
+//
+// This source is available for distribution and/or modification
+// only under the terms of the DOOM Source Code License as
+// published by id Software. All rights reserved.
+//
+// The source is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// FITNESS FOR A PARTICULAR PURPOSE. See the DOOM Source Code License
+// for more details.
+//
+// DESCRIPTION:
+//
+//	  
+//-----------------------------------------------------------------------------
 
-Doom 3 BFG Edition GPL Source Code
-Copyright (C) 1993-2012 id Software LLC, a ZeniMax Media company. 
-
-This file is part of the Doom 3 BFG Edition GPL Source Code ("Doom 3 BFG Edition Source Code").  
-
-Doom 3 BFG Edition Source Code is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-Doom 3 BFG Edition Source Code is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with Doom 3 BFG Edition Source Code.  If not, see <http://www.gnu.org/licenses/>.
-
-In addition, the Doom 3 BFG Edition Source Code is also subject to certain additional terms. You should have received a copy of these additional terms immediately following the terms and conditions of the GNU General Public License which accompanied the Doom 3 BFG Edition Source Code.  If not, please request a copy in writing from id Software at the address below.
-
-If you have questions concerning this license or the applicable additional terms, you may contact in writing id Software LLC, c/o ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
-
-===========================================================================
-*/
 
 #ifndef __M_MISC__
 #define __M_MISC__
 
+#include "basictypes.h"
+#include "zstring.h"
 
-#include "doomtype.h"
-//
-// MISC
-//
-bool
-M_WriteFile
-( char const*	name,
-  void*		source,
-  int		length );
+class FConfigFile;
+class FGameConfigFile;
+class FIWadManager;
 
-int
-	M_ReadFile
-	( char const*	name,
-	byte**	buffer );
+extern FGameConfigFile *GameConfig;
 
-qboolean M_WriteSaveGame( void* source, int length );
-int M_ReadSaveGame ( byte** buffer );
+bool M_WriteFile (char const *name, void *source, int length);
+int M_ReadFile (char const *name, BYTE **buffer);
+int M_ReadFileMalloc (char const *name, BYTE **buffer);
+void M_FindResponseFile (void);
 
-void M_ScreenShot (void);
+// [RH] M_ScreenShot now accepts a filename parameter.
+//		Pass a NULL to get the original behavior.
+void M_ScreenShot (const char *filename);
 
-void M_LoadDefaults (void);
-void M_SaveDefaults (void);
+void M_LoadDefaults ();
+
+bool M_SaveDefaults (const char *filename);
+void M_SaveCustomKeys (FConfigFile *config, char *section, char *subsection, size_t sublen);
 
 
-int
-M_DrawText
-( int		x,
-  int		y,
-  qboolean	direct,
-  char*		string );
 
+FString M_ZLibError(int zerrnum);
+
+// Get special directory paths (defined in m_specialpaths.cpp)
+
+#ifdef __unix__
+FString GetUserFile (const char *path);		// Prepends ~/.zdoom to path
+#endif
+FString M_GetCachePath(bool create);
+FString M_GetAutoexecPath();
+FString M_GetCajunPath(const char *filename);
+FString M_GetConfigPath(bool for_reading);
+FString M_GetScreenshotsPath();
+FString M_GetSavegamesPath();
 
 #endif
-

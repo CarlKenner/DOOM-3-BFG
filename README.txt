@@ -172,16 +172,21 @@ __________________________________________________________
 	Do a hard reset in git (from the log in TortoiseGit) to the v1.0.5 version
 	Copy the openvr folder to DOOM-3-BFG/neo/libs
 
-7. Use the VC13 solution to compile what you need:
+7. Create an account at fmod.org then login and download: http://www.fmod.org/download/fmodex/api/Win/fmodapi44446win-installer.exe
+	Install it, then copy the "api" folder of fmod to DOOM-3-BFG/neo/libs then rename it to "fmod"
+
+8. Use the VC13 solution to compile what you need:
 	DOOM-3-BFG/build/Doom3BFGVR.sln
 	
-8. Download ffmpeg-20140405-git-ec8789a-win32-shared.7z from ffmpeg.zeranoe.com/builds/win32/shared/2014
+9. Download ffmpeg-20140405-git-ec8789a-win32-shared.7z from ffmpeg.zeranoe.com/builds/win32/shared/2014
 
-9. Extract the FFmpeg DLLs to your current build directory under DOOM-3-BFG/build/
+10. Extract the FFmpeg DLLs to your current build directory under DOOM-3-BFG/build/
 
-10. In Visual Studio, right click project Doom3BFGVR, click Properties. Set Configuration to All Configurations. Choose Debugging, set Command Arguments to:
+11. In Visual Studio, right click project Doom3BFGVR, click Properties. Set Configuration to All Configurations. Choose Debugging, set Command Arguments to:
 	+set fs_basepath "C:\Program Files (x86)\Steam\steamapps\common\DOOM 3 BFG Edition"
 	or wherever you installed Doom 3 BFG edition
+
+12. You need to install the gz3doom binary files from https://github.com/cmbruns/gz3doom/releases to your current build directory and/or the Doom 3 BFG directory
 __________________________________
 
 6) COMPILING ON GNU/LINUX

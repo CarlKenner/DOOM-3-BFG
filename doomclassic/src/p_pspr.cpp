@@ -1,511 +1,882 @@
-/*
-===========================================================================
 
-Doom 3 BFG Edition GPL Source Code
-Copyright (C) 1993-2012 id Software LLC, a ZeniMax Media company. 
+//**************************************************************************
+//**
+//** p_pspr.c : Heretic 2 : Raven Software, Corp.
+//**
+//** $RCSfile: p_pspr.c,v $
+//** $Revision: 1.105 $
+//** $Date: 96/01/06 03:23:35 $
+//** $Author: bgokey $
+//**
+//**************************************************************************
 
-This file is part of the Doom 3 BFG Edition GPL Source Code ("Doom 3 BFG Edition Source Code").  
+// HEADER FILES ------------------------------------------------------------
 
-Doom 3 BFG Edition Source Code is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-Doom 3 BFG Edition Source Code is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with Doom 3 BFG Edition Source Code.  If not, see <http://www.gnu.org/licenses/>.
-
-In addition, the Doom 3 BFG Edition Source Code is also subject to certain additional terms. You should have received a copy of these additional terms immediately following the terms and conditions of the GNU General Public License which accompanied the Doom 3 BFG Edition Source Code.  If not, please request a copy in writing from id Software at the address below.
-
-If you have questions concerning this license or the applicable additional terms, you may contact in writing id Software LLC, c/o ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
-
-===========================================================================
-*/
-
-#include "Precompiled.h"
-#include "globaldata.h"
+#include <stdlib.h>
 
 #include "doomdef.h"
 #include "d_event.h"
-
-
+#include "c_cvars.h"
 #include "m_random.h"
+#include "p_enemy.h"
 #include "p_local.h"
 #include "s_sound.h"
-
-// State.
 #include "doomstat.h"
-
-// Data.
-#include "sounds.h"
-
+#include "gi.h"
 #include "p_pspr.h"
-#include "d3xp/Game_local.h"
-
-extern bool globalNetworking;
-
-
-
-static const float	PISTOL_MAGNITUDE_HIGH			= 0.5f;
-static const int	PISTOL_DURATION_HIGH			= 250;
-static const float	PISTOL_MAGNITUDE_LOW			= 1.0f;
-static const int	PISTOL_DURATION_LOW				= 150;
-
-static const float	SHOTGUN_MAGNITUDE_HIGH			= 0.5f;
-static const int	SHOTGUN_DURATION_HIGH			= 250;
-static const float	SHOTGUN_MAGNITUDE_LOW			= 1.0f;
-static const int	SHOTGUN_DURATION_LOW			= 350;
-
-static const float	CHAINGUN_MAGNITUDE_HIGH			= 0.5f;
-static const int	CHAINGUN_DURATION_HIGH			= 250;
-static const float	CHAINGUN_MAGNITUDE_LOW			= 1.0f;
-static const int	CHAINGUN_DURATION_LOW			= 150;
-
-static const float	PLASMAGUN_MAGNITUDE_HIGH		= 0.5f;
-static const int	PLASMAGUN_DURATION_HIGH			= 250;
-static const float	PLASMAGUN_MAGNITUDE_LOW			= 1.0f;
-static const int	PLASMAGUN_DURATION_LOW			= 150;
-
-static const float	SUPERSHOTGUN_MAGNITUDE_HIGH		= 1.0f;
-static const int	SUPERSHOTGUN_DURATION_HIGH		= 250;
-static const float	SUPERSHOTGUN_MAGNITUDE_LOW		= 1.0f;
-static const int	SUPERSHOTGUN_DURATION_LOW		= 350;
-
-static const float	ROCKET_MAGNITUDE_HIGH			= 1.5f;
-static const int	ROCKET_DURATION_HIGH			= 250;
-static const float	ROCKET_MAGNITUDE_LOW			= 1.0f;
-static const int	ROCKET_DURATION_LOW				= 350;
-
-static const float	BFG_MAGNITUDE_HIGH				= 1.5f;
-static const int	BFG_DURATION_HIGH				= 250;
-static const float	BFG_MAGNITUDE_LOW				= 1.0f;
-static const int	BFG_DURATION_LOW				= 400;
+#include "templates.h"
+#include "thingdef/thingdef.h"
+#include "g_level.h"
+#include "farchive.h"
+#include "d_player.h"
 
 
-static const float	SAW_IDL_MAGNITUDE_HIGH			= 0.0f;
-static const int	SAW_IDL_DURATION_HIGH			= 0;
-static const float	SAW_IDL_MAGNITUDE_LOW			= 0.4f;
-static const int	SAW_IDL_DURATION_LOW			= 150;
+// MACROS ------------------------------------------------------------------
 
-static const float	SAW_ATK_MAGNITUDE_HIGH			= 1.0f;
-static const int	SAW_ATK_DURATION_HIGH			= 250;
-static const float	SAW_ATK_MAGNITUDE_LOW			= 0.0f;
-static const int	SAW_ATK_DURATION_LOW			= 0;
+#define LOWERSPEED				FRACUNIT*6
+#define RAISESPEED				FRACUNIT*6
 
-// plasma cells for a bfg attack
+// TYPES -------------------------------------------------------------------
 
-
-//
-// P_SetPsprite
-//
-void
-P_SetPsprite
-( player_t*	player,
- int		position,
- statenum_t	stnum ) 
+struct FGenericButtons
 {
-	pspdef_t*	psp;
-	const state_t*	state;
+	int ReadyFlag;			// Flag passed to A_WeaponReady
+	int StateFlag;			// Flag set in WeaponState
+	int ButtonFlag;			// Button to press
+	ENamedName StateName;	// Name of the button/state
+};
+
+enum EWRF_Options
+{
+	WRF_NoBob			= 1,
+	WRF_NoSwitch		= 1 << 1,
+	WRF_NoPrimary		= 1 << 2,
+	WRF_NoSecondary		= 1 << 3,
+	WRF_NoFire = WRF_NoPrimary | WRF_NoSecondary,
+	WRF_AllowReload		= 1 << 4,
+	WRF_AllowZoom		= 1 << 5,
+	WRF_DisableSwitch	= 1 << 6,
+	WRF_AllowUser1		= 1 << 7,
+	WRF_AllowUser2		= 1 << 8,
+	WRF_AllowUser3		= 1 << 9,
+	WRF_AllowUser4		= 1 << 10,
+};
+
+// EXTERNAL FUNCTION PROTOTYPES --------------------------------------------
+
+// PUBLIC FUNCTION PROTOTYPES ----------------------------------------------
+
+// PRIVATE FUNCTION PROTOTYPES ---------------------------------------------
+
+// EXTERNAL DATA DECLARATIONS ----------------------------------------------
+
+// PUBLIC DATA DEFINITIONS -------------------------------------------------
+
+// [SO] 1=Weapons states are all 1 tick
+//		2=states with a function 1 tick, others 0 ticks.
+CVAR(Int, sv_fastweapons, false, CVAR_SERVERINFO);
+
+// PRIVATE DATA DEFINITIONS ------------------------------------------------
+
+static FRandom pr_wpnreadysnd ("WpnReadySnd");
+static FRandom pr_gunshot ("GunShot");
+
+static const FGenericButtons ButtonChecks[] =
+{
+	{ WRF_AllowZoom,	WF_WEAPONZOOMOK,	BT_ZOOM,	NAME_Zoom },
+	{ WRF_AllowReload,	WF_WEAPONRELOADOK,	BT_RELOAD,	NAME_Reload },
+	{ WRF_AllowUser1,	WF_USER1OK,			BT_USER1,	NAME_User1 },
+	{ WRF_AllowUser2,	WF_USER2OK,			BT_USER2,	NAME_User2 },
+	{ WRF_AllowUser3,	WF_USER3OK,			BT_USER3,	NAME_User3 },
+	{ WRF_AllowUser4,	WF_USER4OK,			BT_USER4,	NAME_User4 },
+};
+
+// CODE --------------------------------------------------------------------
+
+//---------------------------------------------------------------------------
+//
+// PROC P_NewPspriteTick
+//
+//---------------------------------------------------------------------------
+
+void P_NewPspriteTick()
+{
+	// This function should be called after the beginning of a tick, before any possible
+	// prprite-event, or near the end, after any possible psprite event.
+	// Because data is reset for every tick (which it must be) this has no impact on savegames.
+	for (int i = 0; i<MAXPLAYERS; i++)
+	{
+		if (playeringame[i])
+		{
+			pspdef_t *pspdef = players[i].psprites;
+			for (int j = 0;j < NUMPSPRITES; j++)
+			{
+				pspdef[j].processPending = true;
+			}
+		}
+	}
+}
+
+//---------------------------------------------------------------------------
+//
+// PROC P_SetPsprite
+//
+//---------------------------------------------------------------------------
+
+void P_SetPsprite (player_t *player, int position, FState *state, bool nofunction)
+{
+	pspdef_t *psp;
+
+	if (position == ps_weapon && !nofunction)
+	{ // A_WeaponReady will re-set these as needed
+		player->WeaponState &= ~(WF_WEAPONREADY | WF_WEAPONREADYALT | WF_WEAPONBOBBING | WF_WEAPONSWITCHOK | WF_WEAPONRELOADOK | WF_WEAPONZOOMOK |
+								WF_USER1OK | WF_USER2OK | WF_USER3OK | WF_USER4OK);
+	}
 
 	psp = &player->psprites[position];
+	psp->processPending = false; // Do not subsequently perform periodic processing within the same tick.
 
 	do
 	{
-		if (!stnum)
-		{
-			// object removed itself
+		if (state == NULL)
+		{ // Object removed itself.
 			psp->state = NULL;
-			break;	
+			break;
 		}
-
-		state = &::g->states[stnum];
 		psp->state = state;
-		psp->tics = state->tics;	// could be 0
 
-		if (state->misc1)
-		{
-			// coordinate set
-			psp->sx = state->misc1 << FRACBITS;
-			psp->sy = state->misc2 << FRACBITS;
+		if (state->sprite != SPR_FIXED)
+		{ // okay to change sprite and/or frame
+			if (!state->GetSameFrame())
+			{ // okay to change frame
+				psp->frame = state->GetFrame();
+			}
+			if (state->sprite != SPR_NOCHANGE)
+			{ // okay to change sprite
+				psp->sprite = state->sprite;
+			}
 		}
 
-		// Call action routine.
-		// Modified handling.
-		if (state->action)
+
+		if (sv_fastweapons == 2 && position == ps_weapon)
+			psp->tics = state->ActionFunc == NULL ? 0 : 1;
+		else if (sv_fastweapons == 3)
+			psp->tics = (state->GetTics() != 0);
+		else if (sv_fastweapons)
+			psp->tics = 1;		// great for producing decals :)
+		else
+			psp->tics = state->GetTics(); // could be 0
+
+		if (state->GetMisc1())
+		{ // Set coordinates.
+			psp->sx = state->GetMisc1()<<FRACBITS;
+		}
+		if (state->GetMisc2())
 		{
-			state->action(player, psp);
-			if (!psp->state)
-				break;
+			psp->sy = state->GetMisc2()<<FRACBITS;
 		}
 
-		stnum = psp->state->nextstate;
+		if (!nofunction && player->mo != NULL)
+		{
+			if (state->CallAction(player->mo, player->ReadyWeapon))
+			{
+				if (!psp->state)
+				{
+					break;
+				}
+			}
+		}
 
-	} while (!psp->tics);
-	// an initial state of 0 could cycle through
+		state = psp->state->GetNextState();
+	} while (!psp->tics); // An initial state of 0 could cycle through.
 }
 
-
-
+//---------------------------------------------------------------------------
 //
-// P_CalcSwing
-//	
+// PROC P_BringUpWeapon
+//
+// Starts bringing the pending weapon up from the bottom of the screen.
+// This is only called to start the rising, not throughout it.
+//
+//---------------------------------------------------------------------------
 
-void P_CalcSwing (player_t*	player)
+void P_BringUpWeapon (player_t *player)
 {
-	fixed_t	swing;
-	int		angle;
+	FState *newstate;
+	AWeapon *weapon;
 
-	// OPTIMIZE: tablify this.
-	// A LUT would allow for different modes,
-	//  and add flexibility.
-
-	swing = player->bob;
-
-	angle = (FINEANGLES/70*::g->leveltime)&FINEMASK;
-	::g->swingx = FixedMul ( swing, finesine[angle]);
-
-	angle = (FINEANGLES/70*::g->leveltime+FINEANGLES/2)&FINEMASK;
-	::g->swingy = -FixedMul ( ::g->swingx, finesine[angle]);
-}
-
-
-
-//
-// P_BringUpWeapon
-// Starts bringing the pending weapon up
-// from the bottom of the screen.
-// Uses player
-//
-void P_BringUpWeapon (player_t* player)
-{
-	statenum_t	newstate;
-
-	if (player->pendingweapon == wp_nochange)
-		player->pendingweapon = player->readyweapon;
-
-	if (player->pendingweapon == wp_chainsaw && (globalNetworking || (player == &::g->players[::g->consoleplayer])) )
-		S_StartSound (player->mo, sfx_sawup);
-
-	newstate = (statenum_t)(weaponinfo[player->pendingweapon].upstate);
-
-	player->pendingweapon = wp_nochange;
-	player->psprites[ps_weapon].sy = WEAPONBOTTOM;
-
-	P_SetPsprite (player, ps_weapon, newstate);
-}
-
-//
-// P_CheckAmmo
-// Returns true if there is enough ammo to shoot.
-// If not, selects the next weapon to use.
-//
-qboolean P_CheckAmmo (player_t* player)
-{
-	ammotype_t		ammo;
-	int			count;
-
-	ammo = weaponinfo[player->readyweapon].ammo;
-
-	// Minimal amount for one shot varies.
-	if (player->readyweapon == wp_bfg)
-		count = BFGCELLS;
-	else if (player->readyweapon == wp_supershotgun)
-		count = 2;	// Double barrel.
-	else
-		count = 1;	// Regular.
-
-	// Some do not need ammunition anyway.
-	// Return if current ammunition sufficient.
-	if (ammo == am_noammo || player->ammo[ammo] >= count)
-		return true;
-
-	// Out of ammo, pick a weapon to change to.
-	// Preferences are set here.
-	do
+	if (player->PendingWeapon == WP_NOCHANGE)
 	{
-		if (player->weaponowned[wp_plasma]
-		&& player->ammo[am_cell]
-		&& (::g->gamemode != shareware) )
+		if (player->ReadyWeapon != NULL)
 		{
-			player->pendingweapon = wp_plasma;
+			player->psprites[ps_weapon].sy = WEAPONTOP;
+			P_SetPsprite (player, ps_weapon, player->ReadyWeapon->GetReadyState());
 		}
-		else if (player->weaponowned[wp_supershotgun] 
-		&& player->ammo[am_shell]>2
-			&& (::g->gamemode == commercial) )
+		return;
+	}
+
+	weapon = player->PendingWeapon;
+
+	// If the player has a tome of power, use this weapon's powered up
+	// version, if one is available.
+	if (weapon != NULL &&
+		weapon->SisterWeapon &&
+		weapon->SisterWeapon->WeaponFlags & WIF_POWERED_UP &&
+		player->mo->FindInventory (RUNTIME_CLASS(APowerWeaponLevel2), true))
+	{
+		weapon = weapon->SisterWeapon;
+	}
+
+	if (weapon != NULL)
+	{
+		if (weapon->UpSound)
 		{
-			player->pendingweapon = wp_supershotgun;
+			S_Sound (player->mo, CHAN_WEAPON, weapon->UpSound, 1, ATTN_NORM);
 		}
-		else if (player->weaponowned[wp_chaingun]
-		&& player->ammo[am_clip])
+		newstate = weapon->GetUpState ();
+		player->refire = 0;
+	}
+	else
+	{
+		newstate = NULL;
+	}
+	player->PendingWeapon = WP_NOCHANGE;
+	player->ReadyWeapon = weapon;
+	player->psprites[ps_weapon].sy = player->cheats & CF_INSTANTWEAPSWITCH
+		? WEAPONTOP : WEAPONBOTTOM;
+	// make sure that the previous weapon's flash state is terminated.
+	// When coming here from a weapon drop it may still be active.
+	P_SetPsprite(player, ps_flash, NULL);
+	P_SetPsprite (player, ps_weapon, newstate);
+	player->mo->weaponspecial = 0;
+}
+
+
+//---------------------------------------------------------------------------
+//
+// PROC P_FireWeapon
+//
+//---------------------------------------------------------------------------
+
+void P_FireWeapon (player_t *player, FState *state)
+{
+	AWeapon *weapon;
+
+	// [SO] 9/2/02: People were able to do an awful lot of damage
+	// when they were observers...
+	if (player->Bot == NULL && bot_observer)
+	{
+		return;
+	}
+
+	weapon = player->ReadyWeapon;
+	if (weapon == NULL || !weapon->CheckAmmo (AWeapon::PrimaryFire, true))
+	{
+		return;
+	}
+
+	player->mo->PlayAttacking ();
+	weapon->bAltFire = false;
+	if (state == NULL)
+	{
+		state = weapon->GetAtkState(!!player->refire);
+	}
+	P_SetPsprite (player, ps_weapon, state);
+	if (!(weapon->WeaponFlags & WIF_NOALERT))
+	{
+		P_NoiseAlert (player->mo, player->mo, false);
+	}
+}
+
+//---------------------------------------------------------------------------
+//
+// PROC P_FireWeaponAlt
+//
+//---------------------------------------------------------------------------
+
+void P_FireWeaponAlt (player_t *player, FState *state)
+{
+	AWeapon *weapon;
+
+	// [SO] 9/2/02: People were able to do an awful lot of damage
+	// when they were observers...
+	if (player->Bot == NULL && bot_observer)
+	{
+		return;
+	}
+
+	weapon = player->ReadyWeapon;
+	if (weapon == NULL || weapon->FindState(NAME_AltFire) == NULL || !weapon->CheckAmmo (AWeapon::AltFire, true))
+	{
+		return;
+	}
+
+	player->mo->PlayAttacking ();
+	weapon->bAltFire = true;
+
+	if (state == NULL)
+	{
+		state = weapon->GetAltAtkState(!!player->refire);
+	}
+
+	P_SetPsprite (player, ps_weapon, state);
+	if (!(weapon->WeaponFlags & WIF_NOALERT))
+	{
+		P_NoiseAlert (player->mo, player->mo, false);
+	}
+}
+
+//---------------------------------------------------------------------------
+//
+// PROC P_DropWeapon
+//
+// The player died, so put the weapon away.
+//
+//---------------------------------------------------------------------------
+
+void P_DropWeapon (player_t *player)
+{
+	if (player == NULL)
+	{
+		return;
+	}
+	// Since the weapon is dropping, stop blocking switching.
+	player->WeaponState &= ~WF_DISABLESWITCH;
+	if (player->ReadyWeapon != NULL)
+	{
+		P_SetPsprite (player, ps_weapon, player->ReadyWeapon->GetDownState());
+	}
+}
+
+//============================================================================
+//
+// P_BobWeapon
+//
+// [RH] Moved this out of A_WeaponReady so that the weapon can bob every
+// tic and not just when A_WeaponReady is called. Not all weapons execute
+// A_WeaponReady every tic, and it looks bad if they don't bob smoothly.
+//
+// [XA] Added new bob styles and exposed bob properties. Thanks, Ryan Cordell!
+//
+//============================================================================
+
+void P_BobWeapon (player_t *player, pspdef_t *psp, fixed_t *x, fixed_t *y)
+{
+	static fixed_t curbob;
+
+	AWeapon *weapon;
+	fixed_t bobtarget;
+
+	weapon = player->ReadyWeapon;
+
+	if (weapon == NULL || weapon->WeaponFlags & WIF_DONTBOB)
+	{
+		*x = *y = 0;
+		return;
+	}
+
+	// [XA] Get the current weapon's bob properties.
+	int bobstyle = weapon->BobStyle;
+	int bobspeed = (weapon->BobSpeed * 128) >> 16;
+	fixed_t rangex = weapon->BobRangeX;
+	fixed_t rangey = weapon->BobRangeY;
+
+	// Bob the weapon based on movement speed.
+	int angle = (bobspeed*35/TICRATE*level.time)&FINEMASK;
+
+	// [RH] Smooth transitions between bobbing and not-bobbing frames.
+	// This also fixes the bug where you can "stick" a weapon off-center by
+	// shooting it when it's at the peak of its swing.
+	bobtarget = (player->WeaponState & WF_WEAPONBOBBING) ? player->bob : 0;
+	if (curbob != bobtarget)
+	{
+		if (abs (bobtarget - curbob) <= 1*FRACUNIT)
 		{
-			player->pendingweapon = wp_chaingun;
-		}
-		else if (player->weaponowned[wp_shotgun]
-		&& player->ammo[am_shell])
-		{
-			player->pendingweapon = wp_shotgun;
-		}
-		else if (player->ammo[am_clip])
-		{
-			player->pendingweapon = wp_pistol;
-		}
-		else if (player->weaponowned[wp_chainsaw])
-		{
-			player->pendingweapon = wp_chainsaw;
-		}
-		else if (player->weaponowned[wp_missile]
-		&& player->ammo[am_misl])
-		{
-			player->pendingweapon = wp_missile;
-		}
-		else if (player->weaponowned[wp_bfg]
-		&& player->ammo[am_cell]>40
-			&& (::g->gamemode != shareware) )
-		{
-			player->pendingweapon = wp_bfg;
+			curbob = bobtarget;
 		}
 		else
 		{
-			// If everything fails.
-			player->pendingweapon = wp_fist;
+			fixed_t zoom = MAX<fixed_t> (1*FRACUNIT, abs (curbob - bobtarget) / 40);
+			if (curbob > bobtarget)
+			{
+				curbob -= zoom;
+			}
+			else
+			{
+				curbob += zoom;
+			}
 		}
+	}
 
-	} while (player->pendingweapon == wp_nochange);
+	if (curbob != 0)
+	{
+		fixed_t bobx = FixedMul(player->bob, rangex);
+		fixed_t boby = FixedMul(player->bob, rangey);
+		switch (bobstyle)
+		{
+		case AWeapon::BobNormal:
+			*x = FixedMul(bobx, finecosine[angle]);
+			*y = FixedMul(boby, finesine[angle & (FINEANGLES/2-1)]);
+			break;
+			
+		case AWeapon::BobInverse:
+			*x = FixedMul(bobx, finecosine[angle]);
+			*y = boby - FixedMul(boby, finesine[angle & (FINEANGLES/2-1)]);
+			break;
+			
+		case AWeapon::BobAlpha:
+			*x = FixedMul(bobx, finesine[angle]);
+			*y = FixedMul(boby, finesine[angle & (FINEANGLES/2-1)]);
+			break;
+			
+		case AWeapon::BobInverseAlpha:
+			*x = FixedMul(bobx, finesine[angle]);
+			*y = boby - FixedMul(boby, finesine[angle & (FINEANGLES/2-1)]);
+			break;
+			
+		case AWeapon::BobSmooth:
+			*x = FixedMul(bobx, finecosine[angle]);
+			*y = (boby - FixedMul(boby, finecosine[angle*2 & (FINEANGLES-1)])) / 2;
+			break;
 
-	// Now set appropriate weapon overlay.
-	P_SetPsprite (player,
-		ps_weapon,
-		(statenum_t)(weaponinfo[player->readyweapon].downstate));
-
-	return false;	
+		case AWeapon::BobInverseSmooth:
+			*x = FixedMul(bobx, finecosine[angle]);
+			*y = (FixedMul(boby, finecosine[angle*2 & (FINEANGLES-1)]) + boby) / 2;
+		}
+	}
+	else
+	{
+		*x = 0;
+		*y = 0;
+	}
 }
 
+//============================================================================
+//
+// PROC A_WeaponReady
+//
+// Readies a weapon for firing or bobbing with its three ancillary functions,
+// DoReadyWeaponToSwitch(), DoReadyWeaponToFire() and DoReadyWeaponToBob().
+// [XA] Added DoReadyWeaponToReload() and DoReadyWeaponToZoom()
+//
+//============================================================================
 
-//
-// P_FireWeapon.
-//
-void P_FireWeapon (player_t* player)
+void DoReadyWeaponToSwitch (AActor *self, bool switchable)
 {
-	statenum_t	newstate;
+	// Prepare for switching action.
+	player_t *player;
+	if (self && (player = self->player))
+	{
+		if (switchable)
+		{
+			player->WeaponState |= WF_WEAPONSWITCHOK | WF_REFIRESWITCHOK;
+		}
+		else
+		{
+			// WF_WEAPONSWITCHOK is automatically cleared every tic by P_SetPsprite().
+			player->WeaponState &= ~WF_REFIRESWITCHOK;
+		}
+	}
+}
 
-	if (!P_CheckAmmo (player))
+void DoReadyWeaponDisableSwitch (AActor *self, INTBOOL disable)
+{
+	// Discard all switch attempts?
+	player_t *player;
+	if (self && (player = self->player))
+	{
+		if (disable)
+		{
+			player->WeaponState |= WF_DISABLESWITCH;
+			player->WeaponState &= ~WF_REFIRESWITCHOK;
+		}
+		else
+		{
+			player->WeaponState &= ~WF_DISABLESWITCH;
+		}
+	}
+}
+
+void DoReadyWeaponToFire (AActor *self, bool prim, bool alt)
+{
+	player_t *player;
+	AWeapon *weapon;
+
+	if (!self || !(player = self->player) || !(weapon = player->ReadyWeapon))
+	{
+		return;
+	}
+
+	// Change player from attack state
+	if (self->InStateSequence(self->state, self->MissileState) ||
+		self->InStateSequence(self->state, self->MeleeState))
+	{
+		static_cast<APlayerPawn *>(self)->PlayIdle ();
+	}
+
+	// Play ready sound, if any.
+	if (weapon->ReadySound && player->psprites[ps_weapon].state == weapon->FindState(NAME_Ready))
+	{
+		if (!(weapon->WeaponFlags & WIF_READYSNDHALF) || pr_wpnreadysnd() < 128)
+		{
+			S_Sound (self, CHAN_WEAPON, weapon->ReadySound, 1, ATTN_NORM);
+		}
+	}
+
+	// Prepare for firing action.
+	player->WeaponState |= ((prim ? WF_WEAPONREADY : 0) | (alt ? WF_WEAPONREADYALT : 0));
+	return;
+}
+
+void DoReadyWeaponToBob (AActor *self)
+{
+	if (self && self->player && self->player->ReadyWeapon)
+	{
+		// Prepare for bobbing action.
+		self->player->WeaponState |= WF_WEAPONBOBBING;
+		self->player->psprites[ps_weapon].sx = 0;
+		self->player->psprites[ps_weapon].sy = WEAPONTOP;
+	}
+}
+
+void DoReadyWeaponToGeneric(AActor *self, int paramflags)
+{
+	int flags = 0;
+
+	for (size_t i = 0; i < countof(ButtonChecks); ++i)
+	{
+		if (paramflags & ButtonChecks[i].ReadyFlag)
+		{
+			flags |= ButtonChecks[i].StateFlag;
+		}
+	}
+	if (self != NULL && self->player != NULL)
+	{
+		self->player->WeaponState |= flags;
+	}
+}
+
+// This function replaces calls to A_WeaponReady in other codepointers.
+void DoReadyWeapon(AActor *self)
+{
+	DoReadyWeaponToBob(self);
+	DoReadyWeaponToFire(self);
+	DoReadyWeaponToSwitch(self);
+	DoReadyWeaponToGeneric(self, ~0);
+}
+
+DEFINE_ACTION_FUNCTION_PARAMS(AInventory, A_WeaponReady)
+{
+	ACTION_PARAM_START(1);
+	ACTION_PARAM_INT(paramflags, 0);
+
+													DoReadyWeaponToSwitch(self, !(paramflags & WRF_NoSwitch));
+	if ((paramflags & WRF_NoFire) != WRF_NoFire)	DoReadyWeaponToFire(self, !(paramflags & WRF_NoPrimary), !(paramflags & WRF_NoSecondary));
+	if (!(paramflags & WRF_NoBob))					DoReadyWeaponToBob(self);
+													DoReadyWeaponToGeneric(self, paramflags);
+													DoReadyWeaponDisableSwitch(self, paramflags & WRF_DisableSwitch);
+}
+
+//---------------------------------------------------------------------------
+//
+// PROC P_CheckWeaponFire
+//
+// The player can fire the weapon.
+// [RH] This was in A_WeaponReady before, but that only works well when the
+// weapon's ready frames have a one tic delay.
+//
+//---------------------------------------------------------------------------
+
+void P_CheckWeaponFire (player_t *player)
+{
+	AWeapon *weapon = player->ReadyWeapon;
+
+	if (weapon == NULL)
 		return;
 
-	P_SetMobjState (player->mo, S_PLAY_ATK1);
-	newstate = (statenum_t)weaponinfo[player->readyweapon].atkstate;
-	P_SetPsprite (player, ps_weapon, newstate);
-	P_NoiseAlert (player->mo, player->mo);
-
-	if (player->readyweapon == wp_chainsaw )
-	{	
-		if( ::g->plyr == player ) {
-		}
-	}
-
-}
-
-
-
-//
-// P_DropWeapon
-// Player died, so put the weapon away.
-//
-void P_DropWeapon (player_t* player)
-{
-	P_SetPsprite (player,
-		ps_weapon,
-		(statenum_t)weaponinfo[player->readyweapon].downstate);
-}
-
-
-
-extern "C" {
-//
-// A_WeaponReady
-// The player can fire the weapon
-// or change to another weapon at this time.
-// Follows after getting weapon up,
-// or after previous attack/fire sequence.
-//
-void
-A_WeaponReady
-( player_t*	player,
- pspdef_t*	psp )
-{	
-	statenum_t	newstate;
-	int		angle;
-
-	// get out of attack state
-	if (player->mo->state == &::g->states[S_PLAY_ATK1]
-	|| player->mo->state == &::g->states[S_PLAY_ATK2] )
+	// Check for fire. Some weapons do not auto fire.
+	if ((player->WeaponState & WF_WEAPONREADY) && (player->cmd.ucmd.buttons & BT_ATTACK))
 	{
-		P_SetMobjState (player->mo, S_PLAY);
-	}
-
-	if (player->readyweapon == wp_chainsaw
-		&& psp->state == &::g->states[S_SAW])
-	{
-		if (globalNetworking || (player == &::g->players[::g->consoleplayer]))
-			S_StartSound (player->mo, sfx_sawidl);
-	}
-
-	// check for change
-	//  if player is dead, put the weapon away
-	if (player->pendingweapon != wp_nochange || !player->health)
-	{
-		// change weapon
-		//  (pending weapon should allready be validated)
-		newstate = (statenum_t)weaponinfo[player->readyweapon].downstate;
-		P_SetPsprite (player, ps_weapon, newstate);
-		return;	
-	}
-
-	// check for fire
-	//  the missile launcher and bfg do not auto fire
-	if (player->cmd.buttons & BT_ATTACK)
-	{
-		if ( !player->attackdown
-			|| (player->readyweapon != wp_missile
-			&& player->readyweapon != wp_bfg) )
+		if (!player->attackdown || !(weapon->WeaponFlags & WIF_NOAUTOFIRE))
 		{
 			player->attackdown = true;
-			P_FireWeapon (player);		
+			P_FireWeapon (player, NULL);
+			return;
+		}
+	}
+	else if ((player->WeaponState & WF_WEAPONREADYALT) && (player->cmd.ucmd.buttons & BT_ALTATTACK))
+	{
+		if (!player->attackdown || !(weapon->WeaponFlags & WIF_NOAUTOFIRE))
+		{
+			player->attackdown = true;
+			P_FireWeaponAlt (player, NULL);
 			return;
 		}
 	}
 	else
+	{
 		player->attackdown = false;
-
-	// bob the weapon based on movement speed
-	angle = (128*::g->leveltime)&FINEMASK;
-	psp->sx = FRACUNIT + FixedMul (player->bob, finecosine[angle]);
-	angle &= FINEANGLES/2-1;
-	psp->sy = WEAPONTOP + FixedMul (player->bob, finesine[angle]);
+	}
 }
 
-
-
+//---------------------------------------------------------------------------
 //
-// A_ReFire
-// The player can re-fire the weapon
-// without lowering it entirely.
+// PROC P_CheckWeaponSwitch
 //
-void A_ReFire
-( player_t*	player,
- pspdef_t*	psp )
+// The player can change to another weapon at this time.
+// [GZ] This was cut from P_CheckWeaponFire.
+//
+//---------------------------------------------------------------------------
+
+void P_CheckWeaponSwitch (player_t *player)
 {
+	if (player == NULL)
+	{
+		return;
+	}
+	if ((player->WeaponState & WF_DISABLESWITCH) || // Weapon changing has been disabled.
+		player->morphTics != 0)					// Morphed classes cannot change weapons.
+	{ // ...so throw away any pending weapon requests.
+		player->PendingWeapon = WP_NOCHANGE;
+	}
 
-	// check for fire
-	//  (if a weaponchange is pending, let it go through instead)
-	if ( (player->cmd.buttons & BT_ATTACK) 
-		&& player->pendingweapon == wp_nochange
-		&& player->health)
+	// Put the weapon away if the player has a pending weapon or has died, and
+	// we're at a place in the state sequence where dropping the weapon is okay.
+	if ((player->PendingWeapon != WP_NOCHANGE || player->health <= 0) &&
+		player->WeaponState & WF_WEAPONSWITCHOK)
+	{
+		P_DropWeapon(player);
+	}
+}
+
+//---------------------------------------------------------------------------
+//
+// PROC P_CheckWeaponButtons
+//
+// Check extra button presses for weapons.
+//
+//---------------------------------------------------------------------------
+
+static void P_CheckWeaponButtons (player_t *player)
+{
+	if (player->Bot == NULL && bot_observer)
+	{
+		return;
+	}
+	AWeapon *weapon = player->ReadyWeapon;
+	if (weapon == NULL)
+	{
+		return;
+	}
+	// The button checks are ordered by precedence. The first one to match a
+	// button press and affect a state change wins.
+	for (size_t i = 0; i < countof(ButtonChecks); ++i)
+	{
+		if ((player->WeaponState & ButtonChecks[i].StateFlag) &&
+			(player->cmd.ucmd.buttons & ButtonChecks[i].ButtonFlag))
+		{
+			FState *state = weapon->GetStateForButtonName(ButtonChecks[i].StateName);
+			// [XA] don't change state if still null, so if the modder
+			// sets WRF_xxx to true but forgets to define the corresponding
+			// state, the weapon won't disappear. ;)
+			if (state != NULL)
+			{
+				P_SetPsprite(player, ps_weapon, state);
+				return;
+			}
+		}
+	}
+}
+
+//---------------------------------------------------------------------------
+//
+// PROC A_ReFire
+//
+// The player can re-fire the weapon without lowering it entirely.
+//
+//---------------------------------------------------------------------------
+
+DEFINE_ACTION_FUNCTION_PARAMS(AInventory, A_ReFire)
+{
+	ACTION_PARAM_START(1)
+	ACTION_PARAM_STATE(state, 0);
+
+	A_ReFire(self, state);
+}
+
+void A_ReFire(AActor *self, FState *state)
+{
+	player_t *player = self->player;
+	bool pending;
+
+	if (NULL == player)
+	{
+		return;
+	}
+	pending = player->PendingWeapon != WP_NOCHANGE && (player->WeaponState & WF_REFIRESWITCHOK);
+	if ((player->cmd.ucmd.buttons & BT_ATTACK)
+		&& !player->ReadyWeapon->bAltFire && !pending && player->health > 0)
 	{
 		player->refire++;
-		P_FireWeapon (player);
+		P_FireWeapon (player, state);
+	}
+	else if ((player->cmd.ucmd.buttons & BT_ALTATTACK)
+		&& player->ReadyWeapon->bAltFire && !pending && player->health > 0)
+	{
+		player->refire++;
+		P_FireWeaponAlt (player, state);
 	}
 	else
 	{
 		player->refire = 0;
-		P_CheckAmmo (player);
+		player->ReadyWeapon->CheckAmmo (player->ReadyWeapon->bAltFire
+			? AWeapon::AltFire : AWeapon::PrimaryFire, true);
 	}
 }
 
-
-void
-A_CheckReload
-( player_t*	player,
- pspdef_t*	psp )
+DEFINE_ACTION_FUNCTION(AInventory, A_ClearReFire)
 {
-	P_CheckAmmo (player);
-#if 0
-	if (player->ammo[am_shell]<2)
-		P_SetPsprite (player, ps_weapon, S_DSNR1);
-#endif
+	player_t *player = self->player;
+
+	if (NULL != player)
+	{
+		player->refire = 0;
+	}
 }
 
-
-
+//---------------------------------------------------------------------------
 //
-// A_Lower
-// Lowers current weapon,
-//  and changes weapon at bottom.
+// PROC A_CheckReload
 //
-void
-A_Lower
-( player_t*	player,
- pspdef_t*	psp )
-{	
-	psp->sy += LOWERSPEED;
+// Present in Doom, but unused. Also present in Strife, and actually used.
+// This and what I call A_XBowReFire are actually the same thing in Strife,
+// not two separate functions as I have them here.
+//
+//---------------------------------------------------------------------------
 
-	// Is already down.
-	if (psp->sy < WEAPONBOTTOM )
+DEFINE_ACTION_FUNCTION(AInventory, A_CheckReload)
+{
+	if (self->player != NULL)
+	{
+		self->player->ReadyWeapon->CheckAmmo (
+			self->player->ReadyWeapon->bAltFire ? AWeapon::AltFire
+			: AWeapon::PrimaryFire, true);
+	}
+}
+
+//---------------------------------------------------------------------------
+//
+// PROC A_Lower
+//
+//---------------------------------------------------------------------------
+
+DEFINE_ACTION_FUNCTION(AInventory, A_Lower)
+{
+	player_t *player = self->player;
+	pspdef_t *psp;
+
+	if (NULL == player)
+	{
 		return;
-
-	// Player is dead.
-	if (player->playerstate == PST_DEAD)
+	}
+	psp = &player->psprites[ps_weapon];
+	if (player->morphTics || player->cheats & CF_INSTANTWEAPSWITCH)
 	{
 		psp->sy = WEAPONBOTTOM;
-
-		// don't bring weapon back up
-		return;		
 	}
-
-	// The old weapon has been lowered off the screen,
-	// so change the weapon and start raising it
-	if (!player->health)
+	else
 	{
-		// Player is dead, so keep the weapon off screen.
-		P_SetPsprite (player,  ps_weapon, S_NULL);
-		return;	
+		psp->sy += LOWERSPEED;
 	}
-
-	player->readyweapon = player->pendingweapon; 
-
+	if (psp->sy < WEAPONBOTTOM)
+	{ // Not lowered all the way yet
+		return;
+	}
+	if (player->playerstate == PST_DEAD)
+	{ // Player is dead, so don't bring up a pending weapon
+		psp->sy = WEAPONBOTTOM;
+	
+		// Player is dead, so keep the weapon off screen
+		P_SetPsprite (player,  ps_weapon, NULL);
+		return;
+	}
+	// [RH] Clear the flash state. Only needed for Strife.
+	P_SetPsprite (player, ps_flash, NULL);
 	P_BringUpWeapon (player);
 }
 
+//---------------------------------------------------------------------------
+//
+// PROC A_Raise
+//
+//---------------------------------------------------------------------------
 
-//
-// A_Raise
-//
-void
-A_Raise
-( player_t*	player,
- pspdef_t*	psp )
+DEFINE_ACTION_FUNCTION(AInventory, A_Raise)
 {
-	statenum_t	newstate;
-
-	psp->sy -= RAISESPEED;
-
-	if (psp->sy > WEAPONTOP )
+	if (self == NULL)
+	{
 		return;
+	}
+	player_t *player = self->player;
+	pspdef_t *psp;
 
+	if (NULL == player)
+	{
+		return;
+	}
+	if (player->PendingWeapon != WP_NOCHANGE)
+	{
+		P_DropWeapon(player);
+		return;
+	}
+	psp = &player->psprites[ps_weapon];
+	psp->sy -= RAISESPEED;
+	if (psp->sy > WEAPONTOP)
+	{ // Not raised all the way yet
+		return;
+	}
 	psp->sy = WEAPONTOP;
-
-	// The weapon has been raised all the way,
-	//  so change to the ready state.
-	newstate = (statenum_t)weaponinfo[player->readyweapon].readystate;
-
-	P_SetPsprite (player, ps_weapon, newstate);
+	if (player->ReadyWeapon != NULL)
+	{
+		P_SetPsprite (player, ps_weapon, player->ReadyWeapon->GetReadyState());
+	}
+	else
+	{
+		player->psprites[ps_weapon].state = NULL;
+	}
 }
+
 
 
 
 //
 // A_GunFlash
 //
-void
-A_GunFlash
-( player_t*	player,
- pspdef_t*	psp ) 
+enum GF_Flags
 {
-	P_SetMobjState (player->mo, S_PLAY_ATK2);
-	P_SetPsprite (player,ps_flash,(statenum_t)weaponinfo[player->readyweapon].flashstate);
+	GFF_NOEXTCHANGE = 1,
+};
+
+DEFINE_ACTION_FUNCTION_PARAMS(AInventory, A_GunFlash)
+{
+	ACTION_PARAM_START(2)
+	ACTION_PARAM_STATE(flash, 0);
+	ACTION_PARAM_INT(Flags, 1);
+
+	player_t *player = self->player;
+
+	if (NULL == player)
+	{
+		return;
+	}
+	if(!(Flags & GFF_NOEXTCHANGE)) player->mo->PlayAttacking2 ();
+
+	if (flash == NULL)
+	{
+		if (player->ReadyWeapon->bAltFire) flash = player->ReadyWeapon->FindState(NAME_AltFlash);
+		if (flash == NULL) flash = player->ReadyWeapon->FindState(NAME_Flash);
+	}
+	P_SetPsprite (player, ps_flash, flash);
 }
 
 
@@ -514,463 +885,181 @@ A_GunFlash
 // WEAPON ATTACKS
 //
 
-
-//
-// A_Punch
-//
-void
-A_Punch
-( player_t*	player,
- pspdef_t*	psp ) 
-{
-	angle_t	angle;
-	int		damage;
-	int		slope;
-
-	damage = (P_Random ()%10+1)<<1;
-
-	if (player->powers[pw_strength])	
-		damage *= 10;
-
-	angle = player->mo->angle;
-	angle += (P_Random()-P_Random())<<18;
-	slope = P_AimLineAttack (player->mo, angle, MELEERANGE);
-	P_LineAttack (player->mo, angle, MELEERANGE, slope, damage);
-
-	// turn to face target
-	if (::g->linetarget)
-	{
-		S_StartSound (player->mo, sfx_punch);
-		player->mo->angle = R_PointToAngle2 (player->mo->x,
-			player->mo->y,
-			::g->linetarget->x,
-			::g->linetarget->y);
-	}
-}
-
-
-//
-// A_Saw
-//
-void
-A_Saw
-( player_t*	player,
- pspdef_t*	psp ) 
-{
-	angle_t	angle;
-	int		damage;
-	int		slope;
-
-	damage = 2*(P_Random ()%10+1);
-	angle = player->mo->angle;
-	angle += (P_Random()-P_Random())<<18;
-
-	// use meleerange + 1 se the puff doesn't skip the flash
-	slope = P_AimLineAttack (player->mo, angle, MELEERANGE+1);
-	P_LineAttack (player->mo, angle, MELEERANGE+1, slope, damage);
-
-	if (!::g->linetarget)
-	{
-		if (globalNetworking || (player == &::g->players[::g->consoleplayer]))
-			S_StartSound (player->mo, sfx_sawful);
-		return;
-	}
-	if (globalNetworking || (player == &::g->players[::g->consoleplayer]))
-		S_StartSound (player->mo, sfx_sawhit);
-
-	// turn to face target
-	angle = R_PointToAngle2 (player->mo->x, player->mo->y,
-		::g->linetarget->x, ::g->linetarget->y);
-	if (angle - player->mo->angle > ANG180)
-	{
-		if (angle - player->mo->angle < -ANG90/20)
-			player->mo->angle = angle + ANG90/21;
-		else
-			player->mo->angle -= ANG90/20;
-	}
-	else
-	{
-		if (angle - player->mo->angle > ANG90/20)
-			player->mo->angle = angle - ANG90/21;
-		else
-			player->mo->angle += ANG90/20;
-	}
-	player->mo->flags |= MF_JUSTATTACKED;
-}
-
-
-
-//
-// A_FireMissile
-//
-void
-A_FireMissile
-( player_t*	player,
- pspdef_t*	psp ) 
-{
-	if( (player->cheats & CF_INFAMMO) == false ) {
-		player->ammo[weaponinfo[player->readyweapon].ammo]--;
-	}
-	P_SpawnPlayerMissile (player->mo, MT_ROCKET);
-
-	if( ::g->plyr == player ) {
-	}
-
-}
-
-
-//
-// A_FireBFG
-//
-void
-A_FireBFG
-( player_t*	player,
- pspdef_t*	psp ) 
-{
-	if( (player->cheats & CF_INFAMMO) == false ) {
-		player->ammo[weaponinfo[player->readyweapon].ammo] -= BFGCELLS;
-	}
-
-	P_SpawnPlayerMissile (player->mo, MT_BFG);
-
-	if( ::g->plyr == player ) {
-	}
-}
-
-
-
-//
-// A_FirePlasma
-//
-void
-A_FirePlasma
-( player_t*	player,
- pspdef_t*	psp ) 
-{	
-	if( (player->cheats & CF_INFAMMO) == false ) {
-		player->ammo[weaponinfo[player->readyweapon].ammo]--;
-	}
-
-	P_SetPsprite (player,
-		ps_flash,
-		(statenum_t)(weaponinfo[player->readyweapon].flashstate+(P_Random ()&1)) );
-
-	P_SpawnPlayerMissile (player->mo, MT_PLASMA);
-
-	if( ::g->plyr == player ) {
-	}
-}
-
-
-
 //
 // P_BulletSlope
 // Sets a slope so a near miss is at aproximately
 // the height of the intended target
 //
 
-
-void P_BulletSlope (mobj_t*	mo)
+angle_t P_BulletSlope (AActor *mo, AActor **pLineTarget)
 {
-	angle_t	an;
+	static const int angdiff[3] = { -(1<<26), 1<<26, 0 };
+	int i;
+	angle_t an;
+	angle_t pitch;
+	AActor *linetarget;
 
 	// see which target is to be aimed at
-	an = mo->angle;
-	::g->bulletslope = P_AimLineAttack (mo, an, 16*64*FRACUNIT);
-
-	if (!::g->linetarget)
+	i = 2;
+	do
 	{
-		an += 1<<26;
-		::g->bulletslope = P_AimLineAttack (mo, an, 16*64*FRACUNIT);
-		if (!::g->linetarget)
+		an = mo->angle + angdiff[i];
+		pitch = P_AimLineAttack (mo, an, 16*64*FRACUNIT, &linetarget);
+
+		if (mo->player != NULL &&
+			level.IsFreelookAllowed() &&
+			mo->player->userinfo.GetAimDist() <= ANGLE_1/2)
 		{
-			an -= 2<<26;
-			::g->bulletslope = P_AimLineAttack (mo, an, 16*64*FRACUNIT);
+			break;
 		}
+	} while (linetarget == NULL && --i >= 0);
+	if (pLineTarget != NULL)
+	{
+		*pLineTarget = linetarget;
 	}
+	return pitch;
 }
 
 
 //
 // P_GunShot
 //
-void
-P_GunShot
-( mobj_t*	mo,
- qboolean	accurate )
+void P_GunShot (AActor *mo, bool accurate, const PClass *pufftype, angle_t pitch)
 {
-	angle_t	angle;
-	int		damage;
-
-	damage = 5*(P_Random ()%3+1);
+	angle_t 	angle;
+	int 		damage;
+		
+	damage = 5*(pr_gunshot()%3+1);
 	angle = mo->angle;
 
 	if (!accurate)
-		angle += (P_Random()-P_Random())<<18;
-
-	P_LineAttack (mo, angle, MISSILERANGE, ::g->bulletslope, damage);
-}
-
-
-//
-// A_FirePistol
-//
-void
-A_FirePistol
-( player_t*	player,
- pspdef_t*	psp ) 
-{
-	if (globalNetworking || (player == &::g->players[::g->consoleplayer]))
-		S_StartSound (player->mo, sfx_pistol);
-
-	P_SetMobjState (player->mo, S_PLAY_ATK2);
-	if( (player->cheats & CF_INFAMMO ) == false ) {
-		player->ammo[weaponinfo[player->readyweapon].ammo]--;
-	}
-
-	P_SetPsprite (player,
-		ps_flash,
-		(statenum_t)weaponinfo[player->readyweapon].flashstate);
-
-	P_BulletSlope (player->mo);
-	P_GunShot (player->mo, !player->refire);
-
-	if( ::g->plyr == player ) {
-	}
-}
-
-
-//
-// A_FireShotgun
-//
-void
-A_FireShotgun
-( player_t*	player,
- pspdef_t*	psp ) 
-{
-	int		i;
-
-	if (globalNetworking || (player == &::g->players[::g->consoleplayer]))
-		S_StartSound (player->mo, sfx_shotgn);
-	P_SetMobjState (player->mo, S_PLAY_ATK2);
-
-	if( ( player->cheats & CF_INFAMMO ) == false ) {
-		player->ammo[weaponinfo[player->readyweapon].ammo]--;
-	}
-
-	P_SetPsprite (player,
-		ps_flash,
-		(statenum_t)weaponinfo[player->readyweapon].flashstate);
-
-	P_BulletSlope (player->mo);
-
-	for (i=0 ; i<7 ; i++)
-		P_GunShot (player->mo, false);
-
-	if( ::g->plyr == player ) {
-	}
-}
-
-
-
-//
-// A_FireShotgun2
-//
-void
-A_FireShotgun2
-( player_t*	player,
- pspdef_t*	psp ) 
-{
-	int		i;
-	angle_t	angle;
-	int		damage;
-
-
-	if (globalNetworking || (player == &::g->players[::g->consoleplayer]))
-		S_StartSound (player->mo, sfx_dshtgn);
-	P_SetMobjState (player->mo, S_PLAY_ATK2);
-
-	if( (player->cheats & CF_INFAMMO) == false ) {
-		player->ammo[weaponinfo[player->readyweapon].ammo]-=2;
-	}
-
-	P_SetPsprite (player,
-		ps_flash,
-		(statenum_t)weaponinfo[player->readyweapon].flashstate);
-
-	P_BulletSlope (player->mo);
-
-	for (i=0 ; i<20 ; i++)
 	{
-		damage = 5*(P_Random ()%3+1);
-		angle = player->mo->angle;
-		angle += (P_Random()-P_Random())<<19;
-		P_LineAttack (player->mo,
-			angle,
-			MISSILERANGE,
-			::g->bulletslope + ((P_Random()-P_Random())<<5), damage);
+		angle += pr_gunshot.Random2 () << 18;
 	}
 
-	if( ::g->plyr == player ) {
-	}
+	P_LineAttack (mo, angle, PLAYERMISSILERANGE, pitch, damage, NAME_Hitscan, pufftype);
 }
 
-
-//
-// A_FireCGun
-//
-void
-A_FireCGun
-( player_t*	player,
- pspdef_t*	psp ) 
+DEFINE_ACTION_FUNCTION(AInventory, A_Light0)
 {
-	if (globalNetworking || (player == &::g->players[::g->consoleplayer]))
-		S_StartSound (player->mo, sfx_pistol);
-
-	if (!player->ammo[weaponinfo[player->readyweapon].ammo])
-		return;
-
-	P_SetMobjState (player->mo, S_PLAY_ATK2);
-	if( (player->cheats & CF_INFAMMO) == false ) {
-		player->ammo[weaponinfo[player->readyweapon].ammo]--;
-	}
-	P_SetPsprite (player,
-		ps_flash,
-
-		(statenum_t)(
-		weaponinfo[player->readyweapon].flashstate
-		+ psp->state
-		- &::g->states[S_CHAIN1] ));
-
-	P_BulletSlope (player->mo);
-
-	P_GunShot (player->mo, !player->refire);
-
-	if( ::g->plyr == player ) {
-	}
-}
-
-
-
-//
-// ?
-//
-void A_Light0 (player_t *player, pspdef_t *psp)
-{
-	player->extralight = 0;
-}
-
-void A_Light1 (player_t *player, pspdef_t *psp)
-{
-	player->extralight = 1;
-}
-
-void A_Light2 (player_t *player, pspdef_t *psp)
-{
-	player->extralight = 2;
-}
-
-
-//
-// A_BFGSpray
-// Spawn a BFG explosion on every monster in view
-//
-void A_BFGSpray (mobj_t* mo, void * ) 
-{
-	int			i;
-	int			j;
-	int			damage;
-	angle_t		an;
-
-	// offset angles from its attack angle
-	for (i=0 ; i<40 ; i++)
+	if (self->player != NULL)
 	{
-		an = mo->angle - ANG90/2 + ANG90/40*i;
-
-		// mo->target is the originator (player)
-		//  of the missile
-		P_AimLineAttack (mo->target, an, 16*64*FRACUNIT);
-
-		if (!::g->linetarget)
-			continue;
-
-		P_SpawnMobj (::g->linetarget->x,
-			::g->linetarget->y,
-			::g->linetarget->z + (::g->linetarget->height>>2),
-			MT_EXTRABFG);
-
-		damage = 0;
-		for (j=0;j<15;j++)
-			damage += (P_Random()&7) + 1;
-
-		P_DamageMobj (::g->linetarget, mo->target,mo->target, damage);
+		self->player->extralight = 0;
 	}
 }
 
-
-//
-// A_BFGsound
-//
-void
-A_BFGsound
-( player_t*	player,
- pspdef_t*	psp )
+DEFINE_ACTION_FUNCTION(AInventory, A_Light1)
 {
-	S_StartSound (player->mo, sfx_bfg);
+	if (self->player != NULL)
+	{
+		self->player->extralight = 1;
+	}
 }
 
-}; // extern "C"
-
-
-//
-// P_SetupPsprites
-// Called at start of level for each player.
-//
-void P_SetupPsprites (player_t* player) 
+DEFINE_ACTION_FUNCTION(AInventory, A_Light2)
 {
-	int	i;
+	if (self->player != NULL)
+	{
+		self->player->extralight = 2;
+	}
+}
 
-	// remove all psprites
-	for (i=0 ; i<NUMPSPRITES ; i++)
+DEFINE_ACTION_FUNCTION_PARAMS(AInventory, A_Light)
+{
+	ACTION_PARAM_START(1);
+	ACTION_PARAM_INT(light, 0);
+
+	if (self->player != NULL)
+	{
+		self->player->extralight = clamp<int>(light, -20, 20);
+	}
+}
+
+//------------------------------------------------------------------------
+//
+// PROC P_SetupPsprites
+//
+// Called at start of level for each player
+//
+//------------------------------------------------------------------------
+
+void P_SetupPsprites(player_t *player, bool startweaponup)
+{
+	int i;
+
+	// Remove all psprites
+	for (i = 0; i < NUMPSPRITES; i++)
+	{
 		player->psprites[i].state = NULL;
-
-	// spawn the gun
-	player->pendingweapon = player->readyweapon;
+	}
+	// Spawn the ready weapon
+	player->PendingWeapon = !startweaponup ? player->ReadyWeapon : WP_NOCHANGE;
 	P_BringUpWeapon (player);
 }
 
-
-
-
+//------------------------------------------------------------------------
 //
-// P_MovePsprites
-// Called every tic by player thinking routine.
+// PROC P_MovePsprites
 //
-void P_MovePsprites (player_t* player) 
+// Called every tic by player thinking routine
+//
+//------------------------------------------------------------------------
+
+void P_MovePsprites (player_t *player)
 {
-	int		i;
-	pspdef_t*	psp;
-	const state_t*	state;
+	int i;
+	pspdef_t *psp;
+	FState *state;
 
-	psp = &player->psprites[0];
-	for (i=0 ; i<NUMPSPRITES ; i++, psp++)
+	// [RH] If you don't have a weapon, then the psprites should be NULL.
+	if (player->ReadyWeapon == NULL && (player->health > 0 || player->mo->DamageType != NAME_Fire))
 	{
-		// a null state means not active
-		if ( (state = psp->state) )	
+		P_SetPsprite (player, ps_weapon, NULL);
+		P_SetPsprite (player, ps_flash, NULL);
+		if (player->PendingWeapon != WP_NOCHANGE)
 		{
-			// drop tic count and possibly change state
-
-			// a -1 tic count never changes
-			if (psp->tics != -1)	
-			{
-				psp->tics--;
-				if (!psp->tics)
-					P_SetPsprite (player, i, psp->state->nextstate);
-			}				
+			P_BringUpWeapon (player);
 		}
 	}
+	else
+	{
+		psp = &player->psprites[0];
+		for (i = 0; i < NUMPSPRITES; i++, psp++)
+		{
+			if ((state = psp->state) != NULL && psp->processPending) // a null state means not active
+			{
+				// drop tic count and possibly change state
+				if (psp->tics != -1)	// a -1 tic count never changes
+				{
+					psp->tics--;
 
-	player->psprites[ps_flash].sx = player->psprites[ps_weapon].sx;
-	player->psprites[ps_flash].sy = player->psprites[ps_weapon].sy;
+					// [BC] Apply double firing speed.
+					if ( psp->tics && (player->cheats & CF_DOUBLEFIRINGSPEED))
+						psp->tics--;
+
+					if(!psp->tics)
+					{
+						P_SetPsprite (player, i, psp->state->GetNextState());
+					}
+				}
+			}
+		}
+		player->psprites[ps_flash].sx = player->psprites[ps_weapon].sx;
+		player->psprites[ps_flash].sy = player->psprites[ps_weapon].sy;
+		P_CheckWeaponSwitch (player);
+		if (player->WeaponState & (WF_WEAPONREADY | WF_WEAPONREADYALT))
+		{
+			P_CheckWeaponFire (player);
+		}
+
+		// Check custom buttons
+		P_CheckWeaponButtons(player);
+	}
 }
 
+FArchive &operator<< (FArchive &arc, pspdef_t &def)
+{
+	arc << def.state << def.tics << def.sx << def.sy
+		<< def.sprite << def.frame;
+	return arc;
+}

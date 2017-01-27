@@ -1,362 +1,845 @@
-/*
-===========================================================================
-
-Doom 3 BFG Edition GPL Source Code
-Copyright (C) 1993-2012 id Software LLC, a ZeniMax Media company. 
-
-This file is part of the Doom 3 BFG Edition GPL Source Code ("Doom 3 BFG Edition Source Code").  
-
-Doom 3 BFG Edition Source Code is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-Doom 3 BFG Edition Source Code is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with Doom 3 BFG Edition Source Code.  If not, see <http://www.gnu.org/licenses/>.
-
-In addition, the Doom 3 BFG Edition Source Code is also subject to certain additional terms. You should have received a copy of these additional terms immediately following the terms and conditions of the GNU General Public License which accompanied the Doom 3 BFG Edition Source Code.  If not, please request a copy in writing from id Software at the address below.
-
-If you have questions concerning this license or the applicable additional terms, you may contact in writing id Software LLC, c/o ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
-
-===========================================================================
-*/
-
-#include "Precompiled.h"
-#include "globaldata.h"
+// Emacs style mode select	 -*- C++ -*- 
+//-----------------------------------------------------------------------------
+//
+// $Id:$
+//
+// Copyright (C) 1993-1996 by id Software, Inc.
+//
+// This source is available for distribution and/or modification
+// only under the terms of the DOOM Source Code License as
+// published by id Software. All rights reserved.
+//
+// The source is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// FITNESS FOR A PARTICULAR PURPOSE. See the DOOM Source Code License
+// for more details.
+//
+// $Log:$
+//
+// DESCRIPTION:
+//		Handle Sector base lighting effects.
+//
+//-----------------------------------------------------------------------------
 
 
-#include "z_zone.h"
+#include "templates.h"
 #include "m_random.h"
 
 #include "doomdef.h"
 #include "p_local.h"
 
+#include "p_lnspec.h"
 
 // State.
 #include "r_state.h"
+#include "statnums.h"
+#include "farchive.h"
 
+static FRandom pr_flicker ("Flicker");
+static FRandom pr_lightflash ("LightFlash");
+static FRandom pr_strobeflash ("StrobeFlash");
+static FRandom pr_fireflicker ("FireFlicker");
+
+//-----------------------------------------------------------------------------
+//
+//
+//
+//-----------------------------------------------------------------------------
+
+IMPLEMENT_CLASS (DLighting)
+
+DLighting::DLighting ()
+{
+}
+
+DLighting::DLighting (sector_t *sector)
+	: DSectorEffect (sector)
+{
+	ChangeStatNum (STAT_LIGHT);
+}
+
+//-----------------------------------------------------------------------------
 //
 // FIRELIGHT FLICKER
 //
+//-----------------------------------------------------------------------------
 
+IMPLEMENT_CLASS (DFireFlicker)
+
+DFireFlicker::DFireFlicker ()
+{
+}
+
+void DFireFlicker::Serialize (FArchive &arc)
+{
+	Super::Serialize (arc);
+	arc << m_Count << m_MaxLight << m_MinLight;
+}
+
+
+//-----------------------------------------------------------------------------
 //
 // T_FireFlicker
 //
-void T_FireFlicker (fireflicker_t* flick)
-{
-    int	amount;
-	
-    if (--flick->count)
-	return;
-	
-    amount = (P_Random()&3)*16;
-    
-    if (flick->sector->lightlevel - amount < flick->minlight)
-	flick->sector->lightlevel = flick->minlight;
-    else
-	flick->sector->lightlevel = flick->maxlight - amount;
+//-----------------------------------------------------------------------------
 
-    flick->count = 4;
+void DFireFlicker::Tick ()
+{
+	int amount;
+
+	if (--m_Count == 0)
+	{
+		amount = (pr_fireflicker() & 3) << 4;
+
+		// [RH] Shouldn't this be (m_MaxLight - amount < m_MinLight)?
+		if (m_Sector->lightlevel - amount < m_MinLight)
+			m_Sector->SetLightLevel(m_MinLight);
+		else
+			m_Sector->SetLightLevel(m_MaxLight - amount);
+
+		m_Count = 4;
+	}
 }
 
-
-
+//-----------------------------------------------------------------------------
 //
 // P_SpawnFireFlicker
 //
-void P_SpawnFireFlicker (sector_t*	sector)
+//-----------------------------------------------------------------------------
+
+DFireFlicker::DFireFlicker (sector_t *sector)
+	: DLighting (sector)
 {
-    fireflicker_t*	flick;
-	
-    // Note that we are resetting sector attributes.
-    // Nothing special about it during gameplay.
-    sector->special = 0; 
-	
-    flick = (fireflicker_t*)DoomLib::Z_Malloc( sizeof(*flick), PU_LEVEL, 0);
+	m_MaxLight = sector->lightlevel;
+	m_MinLight = sector_t::ClampLight(sector->FindMinSurroundingLight(sector->lightlevel) + 16);
+	m_Count = 4;
+}
 
-    P_AddThinker (&flick->thinker);
+DFireFlicker::DFireFlicker (sector_t *sector, int upper, int lower)
+	: DLighting (sector)
+{
+	m_MaxLight = sector_t::ClampLight(upper);
+	m_MinLight = sector_t::ClampLight(lower);
+	m_Count = 4;
+}
 
-    flick->thinker.function.acp1 = (actionf_p1) T_FireFlicker;
-    flick->sector = sector;
-    flick->maxlight = sector->lightlevel;
-    flick->minlight = P_FindMinSurroundingLight(sector,sector->lightlevel)+16;
-    flick->count = 4;
+//-----------------------------------------------------------------------------
+//
+// [RH] flickering light like Hexen's
+//
+//-----------------------------------------------------------------------------
+
+IMPLEMENT_CLASS (DFlicker)
+
+DFlicker::DFlicker ()
+{
+}
+
+void DFlicker::Serialize (FArchive &arc)
+{
+	Super::Serialize (arc);
+	arc << m_Count << m_MaxLight << m_MinLight;
+}
+
+//-----------------------------------------------------------------------------
+//
+//
+//
+//-----------------------------------------------------------------------------
+
+void DFlicker::Tick ()
+{
+	if (m_Count)
+	{
+		m_Count--;	
+	}
+	else if (m_Sector->lightlevel == m_MaxLight)
+	{
+		m_Sector->SetLightLevel(m_MinLight);
+		m_Count = (pr_flicker()&7)+1;
+	}
+	else
+	{
+		m_Sector->SetLightLevel(m_MaxLight);
+		m_Count = (pr_flicker()&31)+1;
+	}
+}
+
+//-----------------------------------------------------------------------------
+//
+//
+//
+//-----------------------------------------------------------------------------
+
+DFlicker::DFlicker (sector_t *sector, int upper, int lower)
+	: DLighting (sector)
+{
+	m_MaxLight = upper;
+	m_MinLight = lower;
+	sector->lightlevel = upper;
+	m_Count = (pr_flicker()&64)+1;
+}
+
+//-----------------------------------------------------------------------------
+//
+//
+//
+//-----------------------------------------------------------------------------
+
+void EV_StartLightFlickering (int tag, int upper, int lower)
+{
+	int secnum;
+	FSectorTagIterator it(tag);
+	while ((secnum = it.Next()) >= 0)
+	{
+		new DFlicker (&sectors[secnum], upper, lower);
+	}
 }
 
 
-
+//-----------------------------------------------------------------------------
 //
 // BROKEN LIGHT FLASHING
 //
+//-----------------------------------------------------------------------------
 
+IMPLEMENT_CLASS (DLightFlash)
 
+DLightFlash::DLightFlash ()
+{
+}
+
+void DLightFlash::Serialize (FArchive &arc)
+{
+	Super::Serialize (arc);
+	arc << m_Count << m_MaxLight << m_MaxTime << m_MinLight << m_MinTime;
+}
+
+//-----------------------------------------------------------------------------
 //
 // T_LightFlash
 // Do flashing lights.
 //
-void T_LightFlash (lightflash_t* flash)
-{
-    if (--flash->count)
-	return;
-	
-    if (flash->sector->lightlevel == flash->maxlight)
-    {
-	flash-> sector->lightlevel = flash->minlight;
-	flash->count = (P_Random()&flash->mintime)+1;
-    }
-    else
-    {
-	flash-> sector->lightlevel = flash->maxlight;
-	flash->count = (P_Random()&flash->maxtime)+1;
-    }
+//-----------------------------------------------------------------------------
 
+void DLightFlash::Tick ()
+{
+	if (--m_Count == 0)
+	{
+		if (m_Sector->lightlevel == m_MaxLight)
+		{
+			m_Sector->SetLightLevel(m_MinLight);
+			m_Count = (pr_lightflash() & m_MinTime) + 1;
+		}
+		else
+		{
+			m_Sector->SetLightLevel(m_MaxLight);
+			m_Count = (pr_lightflash() & m_MaxTime) + 1;
+		}
+	}
 }
 
-
-
-
+//-----------------------------------------------------------------------------
 //
 // P_SpawnLightFlash
-// After the map has been loaded, scan each sector
-// for specials that spawn thinkers
 //
-void P_SpawnLightFlash (sector_t*	sector)
+//-----------------------------------------------------------------------------
+
+DLightFlash::DLightFlash (sector_t *sector)
+	: DLighting (sector)
 {
-    lightflash_t*	flash;
-
-    // nothing special about it during gameplay
-    sector->special = 0;	
+	// Find light levels like Doom.
+	m_MaxLight = sector->lightlevel;
+	m_MinLight = sector->FindMinSurroundingLight (sector->lightlevel);
+	m_MaxTime = 64;
+	m_MinTime = 7;
+	m_Count = (pr_lightflash() & m_MaxTime) + 1;
+}
 	
-    flash = (lightflash_t*)DoomLib::Z_Malloc( sizeof(*flash), PU_LEVEL, 0);
-
-    P_AddThinker (&flash->thinker);
-
-    flash->thinker.function.acp1 = (actionf_p1) T_LightFlash;
-    flash->sector = sector;
-    flash->maxlight = sector->lightlevel;
-
-    flash->minlight = P_FindMinSurroundingLight(sector,sector->lightlevel);
-    flash->maxtime = 64;
-    flash->mintime = 7;
-    flash->count = (P_Random()&flash->maxtime)+1;
+DLightFlash::DLightFlash (sector_t *sector, int min, int max)
+	: DLighting (sector)
+{
+	// Use specified light levels.
+	m_MaxLight = sector_t::ClampLight(max);
+	m_MinLight = sector_t::ClampLight(min);
+	m_MaxTime = 64;
+	m_MinTime = 7;
+	m_Count = (pr_lightflash() & m_MaxTime) + 1;
 }
 
 
-
+//-----------------------------------------------------------------------------
 //
 // STROBE LIGHT FLASHING
 //
+//-----------------------------------------------------------------------------
 
+IMPLEMENT_CLASS (DStrobe)
 
+DStrobe::DStrobe ()
+{
+}
+
+void DStrobe::Serialize (FArchive &arc)
+{
+	Super::Serialize (arc);
+	arc << m_Count << m_MaxLight << m_MinLight << m_DarkTime << m_BrightTime;
+}
+
+//-----------------------------------------------------------------------------
 //
 // T_StrobeFlash
 //
-void T_StrobeFlash (strobe_t*		flash)
-{
-    if (--flash->count)
-	return;
-	
-    if (flash->sector->lightlevel == flash->minlight)
-    {
-	flash-> sector->lightlevel = flash->maxlight;
-	flash->count = flash->brighttime;
-    }
-    else
-    {
-	flash-> sector->lightlevel = flash->minlight;
-	flash->count =flash->darktime;
-    }
+//-----------------------------------------------------------------------------
 
+void DStrobe::Tick ()
+{
+	if (--m_Count == 0)
+	{
+		if (m_Sector->lightlevel == m_MinLight)
+		{
+			m_Sector->SetLightLevel(m_MaxLight);
+			m_Count = m_BrightTime;
+		}
+		else
+		{
+			m_Sector->SetLightLevel(m_MinLight);
+			m_Count = m_DarkTime;
+		}
+	}
+}
+
+//-----------------------------------------------------------------------------
+//
+// Hexen-style constructor
+//
+//-----------------------------------------------------------------------------
+
+DStrobe::DStrobe (sector_t *sector, int upper, int lower, int utics, int ltics)
+	: DLighting (sector)
+{
+	m_DarkTime = ltics;
+	m_BrightTime = utics;
+	m_MaxLight = sector_t::ClampLight(upper);
+	m_MinLight = sector_t::ClampLight(lower);
+	m_Count = 1;	// Hexen-style is always in sync
+}
+
+//-----------------------------------------------------------------------------
+//
+// Doom-style constructor
+//
+//-----------------------------------------------------------------------------
+
+DStrobe::DStrobe (sector_t *sector, int utics, int ltics, bool inSync)
+	: DLighting (sector)
+{
+	m_DarkTime = ltics;
+	m_BrightTime = utics;
+
+	m_MaxLight = sector->lightlevel;
+	m_MinLight = sector->FindMinSurroundingLight (sector->lightlevel);
+
+	if (m_MinLight == m_MaxLight)
+		m_MinLight = 0;
+
+	m_Count = inSync ? 1 : (pr_strobeflash() & 7) + 1;
 }
 
 
 
-//
-// P_SpawnStrobeFlash
-// After the map has been loaded, scan each sector
-// for specials that spawn thinkers
-//
-void
-P_SpawnStrobeFlash
-( sector_t*	sector,
-  int		fastOrSlow,
-  int		inSync )
-{
-    strobe_t*	flash;
-	
-    flash = (strobe_t*)DoomLib::Z_Malloc( sizeof(*flash), PU_LEVEL, 0);
-
-    P_AddThinker (&flash->thinker);
-
-    flash->sector = sector;
-    flash->darktime = fastOrSlow;
-    flash->brighttime = STROBEBRIGHT;
-    flash->thinker.function.acp1 = (actionf_p1) T_StrobeFlash;
-    flash->maxlight = sector->lightlevel;
-    flash->minlight = P_FindMinSurroundingLight(sector, sector->lightlevel);
-		
-    if (flash->minlight == flash->maxlight)
-	flash->minlight = 0;
-
-    // nothing special about it during gameplay
-    sector->special = 0;	
-
-    if (!inSync)
-	flash->count = (P_Random()&7)+1;
-    else
-	flash->count = 1;
-}
-
-
+//-----------------------------------------------------------------------------
 //
 // Start strobing lights (usually from a trigger)
+// [RH] Made it more configurable.
 //
-void EV_StartLightStrobing(line_t*	line)
+//-----------------------------------------------------------------------------
+
+void EV_StartLightStrobing (int tag, int upper, int lower, int utics, int ltics)
 {
-    int		secnum;
-    sector_t*	sec;
-	
-    secnum = -1;
-    while ((secnum = P_FindSectorFromLineTag(line,secnum)) >= 0)
-    {
-	sec = &::g->sectors[secnum];
-	if (sec->specialdata)
-	    continue;
-	
-	P_SpawnStrobeFlash (sec,SLOWDARK, 0);
-    }
+	int secnum;
+	FSectorTagIterator it(tag);
+	while ((secnum = it.Next()) >= 0)
+	{
+		sector_t *sec = &sectors[secnum];
+		if (sec->lightingdata)
+			continue;
+		
+		new DStrobe (sec, upper, lower, utics, ltics);
+	}
+}
+
+void EV_StartLightStrobing (int tag, int utics, int ltics)
+{
+	int secnum;
+	FSectorTagIterator it(tag);
+	while ((secnum = it.Next()) >= 0)
+	{
+		sector_t *sec = &sectors[secnum];
+		if (sec->lightingdata)
+			continue;
+		
+		new DStrobe (sec, utics, ltics, false);
+	}
 }
 
 
-
+//-----------------------------------------------------------------------------
 //
 // TURN LINE'S TAG LIGHTS OFF
+// [RH] Takes a tag instead of a line
 //
-void EV_TurnTagLightsOff(line_t* line)
+//-----------------------------------------------------------------------------
+
+void EV_TurnTagLightsOff (int tag)
 {
-    int			i;
-    int			j;
-    int			min;
-    sector_t*		sector;
-    sector_t*		tsec;
-    line_t*		templine;
-	
-    sector = ::g->sectors;
-    
-    for (j = 0;j < ::g->numsectors; j++, sector++)
-    {
-	if (sector->tag == line->tag)
+	int secnum;
+	FSectorTagIterator it(tag);
+	while ((secnum = it.Next()) >= 0)
 	{
-	    min = sector->lightlevel;
-	    for (i = 0;i < sector->linecount; i++)
-	    {
-		templine = sector->lines[i];
-		tsec = getNextSector(templine,sector);
-		if (!tsec)
-		    continue;
-		if (tsec->lightlevel < min)
-		    min = tsec->lightlevel;
-	    }
-	    sector->lightlevel = min;
+		sector_t *sector = sectors + secnum;
+		int min = sector->lightlevel;
+
+		for (int i = 0; i < sector->linecount; i++)
+		{
+			sector_t *tsec = getNextSector (sector->lines[i],sector);
+			if (!tsec)
+				continue;
+			if (tsec->lightlevel < min)
+				min = tsec->lightlevel;
+		}
+		sector->SetLightLevel(min);
 	}
-    }
 }
 
 
+//-----------------------------------------------------------------------------
 //
 // TURN LINE'S TAG LIGHTS ON
+// [RH] Takes a tag instead of a line
 //
-void
-EV_LightTurnOn
-( line_t*	line,
-  int		bright )
+//-----------------------------------------------------------------------------
+
+void EV_LightTurnOn (int tag, int bright)
 {
-    int		i;
-    int		j;
-    sector_t*	sector;
-    sector_t*	temp;
-    line_t*	templine;
-	
-    sector = ::g->sectors;
-	
-    for (i = 0; i < ::g->numsectors; i++, sector++)
-    {
-	if (sector->tag == line->tag)
+	int secnum;
+	FSectorTagIterator it(tag);
+	while ((secnum = it.Next()) >= 0)
 	{
-	    // bright = 0 means to search
-	    // for highest light level
-	    // surrounding sector
-	    if (!bright)
-	    {
-		for (j = 0;j < sector->linecount; j++)
+		sector_t *sector = sectors + secnum;
+		int tbright = bright; //jff 5/17/98 search for maximum PER sector
+
+		// bright = -1 means to search ([RH] Not 0)
+		// for highest light level
+		// surrounding sector
+		if (bright < 0)
 		{
-		    templine = sector->lines[j];
-		    temp = getNextSector(templine,sector);
+			int j;
 
-		    if (!temp)
-			continue;
+			for (j = 0; j < sector->linecount; j++)
+			{
+				sector_t *temp = getNextSector (sector->lines[j], sector);
 
-		    if (temp->lightlevel > bright)
-			bright = temp->lightlevel;
+				if (!temp)
+					continue;
+
+				if (temp->lightlevel > tbright)
+					tbright = temp->lightlevel;
+			}
 		}
-	    }
-	    sector-> lightlevel = bright;
+		sector->SetLightLevel(tbright);
+
+		//jff 5/17/98 unless compatibility optioned
+		//then maximum near ANY tagged sector
+		if (i_compatflags & COMPATF_LIGHT)
+		{
+			bright = tbright;
+		}
 	}
-    }
 }
 
-    
+//-----------------------------------------------------------------------------
+//
+// killough 10/98
+//
+// EV_LightTurnOnPartway
+//
+// Turn sectors tagged to line lights on to specified or max neighbor level
+//
+// Passed the tag of sector(s) to light and a light level fraction between 0 and 1.
+// Sets the light to min on 0, max on 1, and interpolates in-between.
+// Used for doors with gradual lighting effects.
+//
+//-----------------------------------------------------------------------------
+
+void EV_LightTurnOnPartway (int tag, fixed_t frac)
+{
+	frac = clamp<fixed_t> (frac, 0, FRACUNIT);
+
+	// Search all sectors for ones with same tag as activating line
+	int secnum;
+	FSectorTagIterator it(tag);
+	while ((secnum = it.Next()) >= 0)
+	{
+		sector_t *temp, *sector = &sectors[secnum];
+		int j, bright = 0, min = sector->lightlevel;
+
+		for (j = 0; j < sector->linecount; ++j)
+		{
+			if ((temp = getNextSector (sector->lines[j], sector)) != NULL)
+			{
+				if (temp->lightlevel > bright)
+				{
+					bright = temp->lightlevel;
+				}
+				if (temp->lightlevel < min)
+				{
+					min = temp->lightlevel;
+				}
+			}
+		}
+		sector->SetLightLevel(DMulScale16 (frac, bright, FRACUNIT-frac, min));
+	}
+}
+
+
+//-----------------------------------------------------------------------------
+//
+// [RH] New function to adjust tagged sectors' light levels
+//		by a relative amount. Light levels are clipped to
+//		be within range for sector_t::lightlevel.
+//
+//-----------------------------------------------------------------------------
+
+void EV_LightChange (int tag, int value)
+{
+	int secnum;
+	FSectorTagIterator it(tag);
+	while ((secnum = it.Next()) >= 0)
+	{
+		sectors[secnum].SetLightLevel(sectors[secnum].lightlevel + value);
+	}
+}
+
+	
+//-----------------------------------------------------------------------------
 //
 // Spawn glowing light
 //
+//-----------------------------------------------------------------------------
 
-void T_Glow(glow_t*	g)
+IMPLEMENT_CLASS (DGlow)
+
+DGlow::DGlow ()
 {
-    switch(g->direction)
-    {
-      case -1:
-	// DOWN
-	g->sector->lightlevel -= GLOWSPEED;
-	if (g->sector->lightlevel <= g->minlight)
+}
+
+void DGlow::Serialize (FArchive &arc)
+{
+	Super::Serialize (arc);
+	arc << m_Direction << m_MaxLight << m_MinLight;
+}
+
+//-----------------------------------------------------------------------------
+//
+//
+//
+//-----------------------------------------------------------------------------
+
+void DGlow::Tick ()
+{
+	int newlight = m_Sector->lightlevel;
+
+	switch (m_Direction)
 	{
-	    g->sector->lightlevel += GLOWSPEED;
-	    g->direction = 1;
+	case -1:
+		// DOWN
+		newlight -= GLOWSPEED;
+		if (newlight <= m_MinLight)
+		{
+			newlight += GLOWSPEED;
+			m_Direction = 1;
+		}
+		break;
+		
+	case 1:
+		// UP
+		newlight += GLOWSPEED;
+		if (newlight >= m_MaxLight)
+		{
+			newlight -= GLOWSPEED;
+			m_Direction = -1;
+		}
+		break;
 	}
-	break;
-	
-      case 1:
-	// UP
-	g->sector->lightlevel += GLOWSPEED;
-	if (g->sector->lightlevel >= g->maxlight)
+	m_Sector->SetLightLevel(newlight);
+}
+
+//-----------------------------------------------------------------------------
+//
+//
+//
+//-----------------------------------------------------------------------------
+
+DGlow::DGlow (sector_t *sector)
+	: DLighting (sector)
+{
+	m_MinLight = sector->FindMinSurroundingLight (sector->lightlevel);
+	m_MaxLight = sector->lightlevel;
+	m_Direction = -1;
+}
+
+//-----------------------------------------------------------------------------
+//
+// [RH] More glowing light, this time appropriate for Hexen-ish uses.
+//
+//-----------------------------------------------------------------------------
+
+IMPLEMENT_CLASS (DGlow2)
+
+DGlow2::DGlow2 ()
+{
+}
+
+void DGlow2::Serialize (FArchive &arc)
+{
+	Super::Serialize (arc);
+	arc << m_End << m_MaxTics << m_OneShot << m_Start << m_Tics;
+}
+
+//-----------------------------------------------------------------------------
+//
+//
+//
+//-----------------------------------------------------------------------------
+
+void DGlow2::Tick ()
+{
+	if (m_Tics++ >= m_MaxTics)
 	{
-	    g->sector->lightlevel -= GLOWSPEED;
-	    g->direction = -1;
+		if (m_OneShot)
+		{
+			m_Sector->SetLightLevel(m_End);
+			Destroy ();
+			return;
+		}
+		else
+		{
+			int temp = m_Start;
+			m_Start = m_End;
+			m_End = temp;
+			m_Tics -= m_MaxTics;
+		}
 	}
-	break;
-    }
+
+	m_Sector->SetLightLevel(((m_End - m_Start) * m_Tics) / m_MaxTics + m_Start);
+}
+
+//-----------------------------------------------------------------------------
+//
+//
+//
+//-----------------------------------------------------------------------------
+
+DGlow2::DGlow2 (sector_t *sector, int start, int end, int tics, bool oneshot)
+	: DLighting (sector)
+{
+	m_Start = sector_t::ClampLight(start);
+	m_End = sector_t::ClampLight(end);
+	m_MaxTics = tics;
+	m_Tics = -1;
+	m_OneShot = oneshot;
+}
+
+//-----------------------------------------------------------------------------
+//
+//
+//
+//-----------------------------------------------------------------------------
+
+void EV_StartLightGlowing (int tag, int upper, int lower, int tics)
+{
+	int secnum;
+
+	// If tics is non-positive, then we can't really do anything.
+	if (tics <= 0)
+	{
+		return;
+	}
+
+	if (upper < lower)
+	{
+		int temp = upper;
+		upper = lower;
+		lower = temp;
+	}
+
+	FSectorTagIterator it(tag);
+	while ((secnum = it.Next()) >= 0)
+	{
+		sector_t *sec = &sectors[secnum];
+		if (sec->lightingdata)
+			continue;
+		
+		new DGlow2 (sec, upper, lower, tics, false);
+	}
+}
+
+//-----------------------------------------------------------------------------
+//
+//
+//
+//-----------------------------------------------------------------------------
+
+void EV_StartLightFading (int tag, int value, int tics)
+{
+	int secnum;
+	FSectorTagIterator it(tag);
+	while ((secnum = it.Next()) >= 0)
+	{
+		sector_t *sec = &sectors[secnum];
+		if (sec->lightingdata)
+			continue;
+
+		if (tics <= 0)
+		{
+			sec->SetLightLevel(value);
+		}
+		else
+		{
+			// No need to fade if lightlevel is already at desired value.
+			if (sec->lightlevel == value)
+				continue;
+
+			new DGlow2 (sec, sec->lightlevel, value, tics, true);
+		}
+	}
 }
 
 
-void P_SpawnGlowingLight(sector_t*	sector)
+//-----------------------------------------------------------------------------
+//
+// [RH] Phased lighting ala Hexen, but implemented without the help of the Hexen source
+// The effect is a little different, but close enough, I feel.
+//
+//-----------------------------------------------------------------------------
+
+IMPLEMENT_CLASS (DPhased)
+
+DPhased::DPhased ()
 {
-    glow_t*	g;
-	
-    g = (glow_t*)DoomLib::Z_Malloc( sizeof(*g), PU_LEVEL, 0);
-
-    P_AddThinker(&g->thinker);
-
-    g->sector = sector;
-    g->minlight = P_FindMinSurroundingLight(sector,sector->lightlevel);
-    g->maxlight = sector->lightlevel;
-    g->thinker.function.acp1 = (actionf_p1) T_Glow;
-    g->direction = -1;
-
-    sector->special = 0;
 }
 
+void DPhased::Serialize (FArchive &arc)
+{
+	Super::Serialize (arc);
+	arc << m_BaseLevel << m_Phase;
+}
 
+//-----------------------------------------------------------------------------
+//
+//
+//
+//-----------------------------------------------------------------------------
+
+void DPhased::Tick ()
+{
+	const int steps = 12;
+
+	if (m_Phase < steps)
+		m_Sector->SetLightLevel( ((255 - m_BaseLevel) * m_Phase) / steps + m_BaseLevel);
+	else if (m_Phase < 2*steps)
+		m_Sector->SetLightLevel( ((255 - m_BaseLevel) * (2*steps - m_Phase - 1) / steps
+								+ m_BaseLevel));
+	else
+		m_Sector->SetLightLevel(m_BaseLevel);
+
+	if (m_Phase == 0)
+		m_Phase = 63;
+	else
+		m_Phase--;
+}
+
+//-----------------------------------------------------------------------------
+//
+//
+//
+//-----------------------------------------------------------------------------
+
+int DPhased::PhaseHelper (sector_t *sector, int index, int light, sector_t *prev)
+{
+	if (!sector)
+	{
+		return index;
+	}
+	else
+	{
+		DPhased *l;
+		int baselevel = sector->lightlevel ? sector->lightlevel : light;
+
+		if (index == 0)
+		{
+			l = this;
+			m_BaseLevel = baselevel;
+		}
+		else
+			l = new DPhased (sector, baselevel);
+
+		int numsteps = PhaseHelper (sector->NextSpecialSector (
+				sector->special == LightSequenceSpecial1 ?
+					LightSequenceSpecial2 : LightSequenceSpecial1, prev),
+				index + 1, l->m_BaseLevel, sector);
+		l->m_Phase = ((numsteps - index - 1) * 64) / numsteps;
+
+		sector->special = 0;
+
+		return numsteps;
+	}
+}
+
+//-----------------------------------------------------------------------------
+//
+//
+//
+//-----------------------------------------------------------------------------
+
+DPhased::DPhased (sector_t *sector, int baselevel)
+	: DLighting (sector)
+{
+	m_BaseLevel = baselevel;
+}
+
+DPhased::DPhased (sector_t *sector)
+	: DLighting (sector)
+{
+	PhaseHelper (sector, 0, 0, NULL);
+}
+
+DPhased::DPhased (sector_t *sector, int baselevel, int phase)
+	: DLighting (sector)
+{
+	m_BaseLevel = baselevel;
+	m_Phase = phase;
+}
+
+//============================================================================
+//
+// EV_StopLightEffect
+//
+// Stops a lighting effect that is currently running in a sector.
+//
+//============================================================================
+
+void EV_StopLightEffect (int tag)
+{
+	TThinkerIterator<DLighting> iterator;
+	DLighting *effect;
+
+	while ((effect = iterator.Next()) != NULL)
+	{
+		if (tagManager.SectorHasTag(effect->GetSector(), tag))
+		{
+			effect->Destroy();
+		}
+	}
+}

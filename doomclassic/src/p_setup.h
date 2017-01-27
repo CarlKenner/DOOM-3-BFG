@@ -1,50 +1,172 @@
-/*
-===========================================================================
+// Emacs style mode select	 -*- C++ -*- 
+//-----------------------------------------------------------------------------
+//
+// $Id:$
+//
+// Copyright (C) 1993-1996 by id Software, Inc.
+//
+// This source is available for distribution and/or modification
+// only under the terms of the DOOM Source Code License as
+// published by id Software. All rights reserved.
+//
+// The source is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// FITNESS FOR A PARTICULAR PURPOSE. See the DOOM Source Code License
+// for more details.
+//
+// DESCRIPTION:
+//	 Setup a game, startup stuff.
+//
+//-----------------------------------------------------------------------------
 
-Doom 3 BFG Edition GPL Source Code
-Copyright (C) 1993-2012 id Software LLC, a ZeniMax Media company. 
-
-This file is part of the Doom 3 BFG Edition GPL Source Code ("Doom 3 BFG Edition Source Code").  
-
-Doom 3 BFG Edition Source Code is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-Doom 3 BFG Edition Source Code is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with Doom 3 BFG Edition Source Code.  If not, see <http://www.gnu.org/licenses/>.
-
-In addition, the Doom 3 BFG Edition Source Code is also subject to certain additional terms. You should have received a copy of these additional terms immediately following the terms and conditions of the GNU General Public License which accompanied the Doom 3 BFG Edition Source Code.  If not, please request a copy in writing from id Software at the address below.
-
-If you have questions concerning this license or the applicable additional terms, you may contact in writing id Software LLC, c/o ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
-
-===========================================================================
-*/
 
 #ifndef __P_SETUP__
 #define __P_SETUP__
 
-
-#ifdef __GNUG__
-#pragma interface
-#endif
+#include "resourcefiles/resourcefile.h"
+#include "doomdata.h"
 
 
-// NOT called by W_Ticker. Fixme.
-void
-P_SetupLevel
-( int		episode,
-  int		map,
-  int		playermask,
-  skill_t	skill);
+struct MapData
+{
+	struct MapLump
+	{
+		char Name[8];
+		FileReader *Reader;
+	} MapLumps[ML_MAX];
+	bool HasBehavior;
+	bool Encrypted;
+	bool isText;
+	bool InWad;
+	int lumpnum;
+	FileReader * file;
+	FResourceFile * resource;
+	
+	MapData()
+	{
+		memset(MapLumps, 0, sizeof(MapLumps));
+		file = NULL;
+		resource = NULL;
+		lumpnum = -1;
+		HasBehavior = false;
+		Encrypted = false;
+		isText = false;
+		InWad = false;
+	}
+	
+	~MapData()
+	{
+		for (unsigned int i = 0;i < ML_MAX;++i)
+			delete MapLumps[i].Reader;
+
+		delete resource;
+		resource = NULL;
+	}
+
+	void Seek(unsigned int lumpindex)
+	{
+		if (lumpindex<countof(MapLumps))
+		{
+			file = MapLumps[lumpindex].Reader;
+			file->Seek(0, SEEK_SET);
+		}
+	}
+
+	void Read(unsigned int lumpindex, void * buffer, int size = -1)
+	{
+		if (lumpindex<countof(MapLumps))
+		{
+			if (size == -1) size = MapLumps[lumpindex].Reader->GetLength();
+			Seek(lumpindex);
+			file->Read(buffer, size);
+		}
+	}
+
+	DWORD Size(unsigned int lumpindex)
+	{
+		if (lumpindex<countof(MapLumps) && MapLumps[lumpindex].Reader)
+		{
+			return MapLumps[lumpindex].Reader->GetLength();
+		}
+		return 0;
+	}
+
+	void GetChecksum(BYTE cksum[16]);
+};
+
+MapData * P_OpenMapData(const char * mapname, bool justcheck);
+bool P_CheckMapData(const char * mapname);
+
+
+// NOT called by W_Ticker. Fixme. [RH] Is that bad?
+//
+// [RH] The only parameter used is mapname, so I removed playermask and skill.
+//		On September 1, 1998, I added the position to indicate which set
+//		of single-player start spots should be spawned in the level.
+void P_SetupLevel (const char *mapname, int position);
+
+void P_FreeLevelData();
+void P_FreeExtraLevelData();
 
 // Called by startup code.
 void P_Init (void);
 
-#endif
+struct line_t;
+struct maplinedef_t;
 
+void P_LoadTranslator(const char *lumpname);
+void P_TranslateLineDef (line_t *ld, maplinedef_t *mld, int lineindexforid = -1);
+int P_TranslateSectorSpecial (int);
+
+int GetUDMFInt(int type, int index, const char *key);
+fixed_t GetUDMFFixed(int type, int index, const char *key);
+
+bool P_LoadGLNodes(MapData * map);
+bool P_CheckNodes(MapData * map, bool rebuilt, int buildtime);
+bool P_CheckForGLNodes();
+void P_SetRenderSector();
+
+
+struct sidei_t	// [RH] Only keep BOOM sidedef init stuff around for init
+{
+	union
+	{
+		// Used when unpacking sidedefs and assigning
+		// properties based on linedefs.
+		struct
+		{
+			short tag, special;
+			short alpha;
+			DWORD map;
+		} a;
+
+		// Used when grouping sidedefs into loops.
+		struct
+		{
+			DWORD first, next;
+			char lineside;
+		} b;
+	};
+};
+extern sidei_t *sidetemp;
+extern bool hasglnodes;
+extern struct glsegextra_t *glsegextras;
+
+struct FMissingCount
+{
+	FMissingCount() : Count(0) {}
+	int Count;
+};
+typedef TMap<FString,FMissingCount> FMissingTextureTracker;
+
+// Record of user data for UDMF maps
+struct FMapThingUserData
+{
+	FName Property;
+	int Value;
+};
+extern TMap<unsigned,unsigned> MapThingsUserDataIndex;	// from mapthing idx -> user data idx
+extern TArray<FMapThingUserData> MapThingsUserData;
+
+
+#endif

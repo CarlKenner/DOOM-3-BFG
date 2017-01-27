@@ -1,0 +1,30 @@
+Source: gz3doom
+Section: games
+Priority: optional
+Maintainer: Marshall Banana <djcj@gmx.de>
+Build-Depends: debhelper (>= 9),
+               cmake,
+               libbz2-dev,
+               libfluidsynth-dev,
+               libglew-dev,
+               libgtk2.0-dev,
+               libjpeg-dev,
+               libsdl1.2-dev,
+               libudev-dev,
+               libxinerama-dev,
+               zlib1g-dev
+Standards-Version: 3.9.5
+Vcs-Git: https://github.com/cmbruns/gz3doom.git
+Vcs-Browser: https://github.com/cmbruns/gz3doom
+Homepage: http://rotatingpenguin.com/gz3doom/
+
+Package: gz3doom
+Architecture: any
+Depends: ${misc:Depends},
+         ${shlibs:Depends},
+         zenity
+Description: Doom engine with stereoscopic features
+ This is a 3D adaptation of the legendary first-person-shooter
+ game Doom, which was first released in 1994.
+ It's based on GZDoom, and adds stereoscopic rendering,
+ including Oculus Rift mode.

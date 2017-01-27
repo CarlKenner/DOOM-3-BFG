@@ -1,50 +1,50 @@
-/*
-===========================================================================
+// Emacs style mode select	 -*- C++ -*- 
+//-----------------------------------------------------------------------------
+//
+// $Id:$
+//
+// Copyright (C) 1993-1996 by id Software, Inc.
+//
+// This source is available for distribution and/or modification
+// only under the terms of the DOOM Source Code License as
+// published by id Software. All rights reserved.
+//
+// The source is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// FITNESS FOR A PARTICULAR PURPOSE. See the DOOM Source Code License
+// for more details.
+//
+// DESCRIPTION:
+//		Sky rendering.
+//
+//-----------------------------------------------------------------------------
 
-Doom 3 BFG Edition GPL Source Code
-Copyright (C) 1993-2012 id Software LLC, a ZeniMax Media company. 
+#ifndef __R_SKY_H__
+#define __R_SKY_H__
 
-This file is part of the Doom 3 BFG Edition GPL Source Code ("Doom 3 BFG Edition Source Code").  
+#include "textures/textures.h"
 
-Doom 3 BFG Edition Source Code is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
+enum
+{
+	SKYBOX_MAP = 0,
+	SKYBOX_PLANE,
+	SKYBOX_HORIZON
+};
 
-Doom 3 BFG Edition Source Code is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
+extern FTextureID	skyflatnum;
+extern fixed_t		sky1cyl,		sky2cyl;
+extern FTextureID	sky1texture,	sky2texture;
+extern double		sky1pos,		sky2pos;
+extern fixed_t	skytexturemid;
+extern fixed_t	skyiscale;
+extern fixed_t	skyscale;
+extern bool		skystretch;
+extern fixed_t freelookviewheight;
 
-You should have received a copy of the GNU General Public License
-along with Doom 3 BFG Edition Source Code.  If not, see <http://www.gnu.org/licenses/>.
+#define SKYSTRETCH_HEIGHT 228
 
-In addition, the Doom 3 BFG Edition Source Code is also subject to certain additional terms. You should have received a copy of these additional terms immediately following the terms and conditions of the GNU General Public License which accompanied the Doom 3 BFG Edition Source Code.  If not, please request a copy in writing from id Software at the address below.
+// Called whenever the sky changes.
+void R_InitSkyMap		();
+void R_UpdateSky (DWORD mstime);
 
-If you have questions concerning this license or the applicable additional terms, you may contact in writing id Software LLC, c/o ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
-
-===========================================================================
-*/
-
-#ifndef __R_SKY__
-#define __R_SKY__
-
-
-#ifdef __GNUG__
-#pragma interface
-#endif
-
-// SKY, store the number for name.
-#define			SKYFLATNAME  "F_SKY1"
-
-// The sky map is 256*128*4 maps.
-#define ANGLETOSKYSHIFT		22
-
-extern  int		skytexture;
-extern int		skytexturemid;
-
-// Called whenever the view size changes.
-void R_InitSkyMap (void);
-
-#endif
-
+#endif //__R_SKY_H__

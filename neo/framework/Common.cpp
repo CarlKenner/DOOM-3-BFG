@@ -2065,11 +2065,11 @@ bool idCommonLocal::ProcessEvent( const sysEvent_t* event )
 		
 			if( event->evValue2 == 1 )
 			{
-				classicEvent.type = ev_keydown;
+				classicEvent.type = EV_KeyDown;
 			}
 			else if( event->evValue2 == 0 )
 			{
-				classicEvent.type = ev_keyup;
+				classicEvent.type = EV_KeyUp;
 			}
 			
 			DoomLib::SetPlayer( 0 );

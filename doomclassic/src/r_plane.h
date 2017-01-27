@@ -1,44 +1,76 @@
-/*
-===========================================================================
-
-Doom 3 BFG Edition GPL Source Code
-Copyright (C) 1993-2012 id Software LLC, a ZeniMax Media company. 
-
-This file is part of the Doom 3 BFG Edition GPL Source Code ("Doom 3 BFG Edition Source Code").  
-
-Doom 3 BFG Edition Source Code is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-Doom 3 BFG Edition Source Code is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with Doom 3 BFG Edition Source Code.  If not, see <http://www.gnu.org/licenses/>.
-
-In addition, the Doom 3 BFG Edition Source Code is also subject to certain additional terms. You should have received a copy of these additional terms immediately following the terms and conditions of the GNU General Public License which accompanied the Doom 3 BFG Edition Source Code.  If not, please request a copy in writing from id Software at the address below.
-
-If you have questions concerning this license or the applicable additional terms, you may contact in writing id Software LLC, c/o ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
-
-===========================================================================
-*/
-
-#ifndef __R_PLANE__
-#define __R_PLANE__
+// Emacs style mode select	 -*- C++ -*- 
+//-----------------------------------------------------------------------------
+//
+// $Id:$
+//
+// Copyright (C) 1993-1996 by id Software, Inc.
+//
+// This source is available for distribution and/or modification
+// only under the terms of the DOOM Source Code License as
+// published by id Software. All rights reserved.
+//
+// The source is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// FITNESS FOR A PARTICULAR PURPOSE. See the DOOM Source Code License
+// for more details.
+//
+// DESCRIPTION:
+//		Refresh, visplane stuff (floor, ceilings).
+//
+//-----------------------------------------------------------------------------
 
 
-#include "r_data.h"
+#ifndef __R_PLANE_H__
+#define __R_PLANE_H__
 
-#ifdef __GNUG__
-#pragma interface
-#endif
+#include <stddef.h>
+
+class ASkyViewpoint;
+
+//
+// The infamous visplane
+// 
+struct visplane_s
+{
+	struct visplane_s *next;		// Next visplane in hash chain -- killough
+
+	secplane_t	height;
+	FTextureID	picnum;
+	int			lightlevel;
+	fixed_t		xoffs, yoffs;		// killough 2/28/98: Support scrolling flats
+	int			left, right;
+	FDynamicColormap *colormap;			// [RH] Support multiple colormaps
+	fixed_t		xscale, yscale;		// [RH] Support flat scaling
+	angle_t		angle;				// [RH] Support flat rotation
+	int			sky;
+	ASkyViewpoint *skybox;			// [RH] Support sky boxes
+
+	// [RH] This set of variables copies information from the time when the
+	// visplane is created. They are only used by stacks so that you can
+	// have stacked sectors inside a skybox. If the visplane is not for a
+	// stack, then they are unused.
+	int			extralight;
+	float		visibility;
+	fixed_t		viewx, viewy, viewz;
+	angle_t		viewangle;
+	fixed_t		Alpha;
+	bool		Additive;
+
+	// kg3D - keep track of mirror and skybox owner
+	int CurrentSkybox;
+	int CurrentMirror; // mirror counter, counts all of them
+	int MirrorFlags; // this is not related to CurrentMirror
+
+	unsigned short *bottom;			// [RH] bottom and top arrays are dynamically
+	unsigned short pad;				//		allocated immediately after the
+	unsigned short top[];			//		visplane.
+};
+typedef struct visplane_s visplane_t;
+
 
 
 // Visplane related.
-extern  short*		lastopening;
+extern ptrdiff_t		lastopening;	// type short
 
 
 typedef void (*planefunction_t) (int top, int bottom);
@@ -46,44 +78,44 @@ typedef void (*planefunction_t) (int top, int bottom);
 extern planefunction_t	floorfunc;
 extern planefunction_t	ceilingfunc_t;
 
-extern short		floorclip[SCREENWIDTH];
-extern short		ceilingclip[SCREENWIDTH];
+extern short			floorclip[MAXWIDTH];
+extern short			ceilingclip[MAXWIDTH];
 
-extern fixed_t		yslope[SCREENHEIGHT];
-extern fixed_t		distscale[SCREENWIDTH];
+extern fixed_t			yslope[MAXHEIGHT];
 
-void R_InitPlanes (void);
-void R_ClearPlanes (void);
+void R_InitPlanes ();
+void R_DeinitPlanes ();
+void R_ClearPlanes (bool fullclear);
 
-void
-R_MapPlane
-( int		y,
-  int		x1,
-  int		x2 );
+int R_DrawPlanes ();
+void R_DrawSkyBoxes ();
+void R_DrawSkyPlane (visplane_t *pl);
+void R_DrawNormalPlane (visplane_t *pl, fixed_t alpha, bool additive, bool masked);
+void R_DrawTiltedPlane (visplane_t *pl, fixed_t alpha, bool additive, bool masked);
+void R_MapVisPlane (visplane_t *pl, void (*mapfunc)(int y, int x1));
 
-void
-R_MakeSpans
-( int		x,
-  int		t1,
-  int		b1,
-  int		t2,
-  int		b2 );
+visplane_t *R_FindPlane
+( const secplane_t &height,
+  FTextureID	picnum,
+  int			lightlevel,
+  fixed_t		alpha,
+  bool			additive,
+  fixed_t		xoffs,		// killough 2/28/98: add x-y offsets
+  fixed_t		yoffs,
+  fixed_t		xscale,
+  fixed_t		yscale,
+  angle_t		angle,
+  int			sky,
+  ASkyViewpoint *skybox);
 
-void R_DrawPlanes (void);
-
-visplane_t*
-R_FindPlane
-( fixed_t	height,
-  int		picnum,
-  int		lightlevel );
-
-visplane_t*
-R_CheckPlane
-( visplane_t*	pl,
-  int		start,
-  int		stop );
+visplane_t *R_CheckPlane (visplane_t *pl, int start, int stop);
 
 
+// [RH] Added for multires support
+bool R_PlaneInitData (void);
 
-#endif
 
+extern visplane_t*		floorplane;
+extern visplane_t*		ceilingplane;
+
+#endif // __R_PLANE_H__

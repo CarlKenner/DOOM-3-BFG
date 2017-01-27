@@ -1,954 +1,655 @@
 /*
-===========================================================================
-
-Doom 3 BFG Edition GPL Source Code
-Copyright (C) 1993-2012 id Software LLC, a ZeniMax Media company.
-Copyright (C) 2013 Felix Rueegg
-
-This file is part of the Doom 3 BFG Edition GPL Source Code ("Doom 3 BFG Edition Source Code").
-
-Doom 3 BFG Edition Source Code is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-Doom 3 BFG Edition Source Code is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with Doom 3 BFG Edition Source Code.  If not, see <http://www.gnu.org/licenses/>.
-
-In addition, the Doom 3 BFG Edition Source Code is also subject to certain additional terms. You should have received a copy of these additional terms immediately following the terms and conditions of the GNU General Public License which accompanied the Doom 3 BFG Edition Source Code.  If not, please request a copy in writing from id Software at the address below.
-
-If you have questions concerning this license or the applicable additional terms, you may contact in writing id Software LLC, c/o ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
-
-===========================================================================
+** i_sound.cpp
+** Stubs for sound interfaces.
+**
+**---------------------------------------------------------------------------
+** Copyright 1998-2006 Randy Heit
+** All rights reserved.
+**
+** Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions
+** are met:
+**
+** 1. Redistributions of source code must retain the above copyright
+**    notice, this list of conditions and the following disclaimer.
+** 2. Redistributions in binary form must reproduce the above copyright
+**    notice, this list of conditions and the following disclaimer in the
+**    documentation and/or other materials provided with the distribution.
+** 3. The name of the author may not be used to endorse or promote products
+**    derived from this software without specific prior written permission.
+**
+** THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
+** IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+** OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+** IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
+** INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+** NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+** THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+**---------------------------------------------------------------------------
+**
 */
 
-#include "Precompiled.h"
-#include "globaldata.h"
-
-//
-// DESCRIPTION:
-//	System interface for sound.
-//
-//-----------------------------------------------------------------------------
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#include <mmsystem.h>
+#include "resource.h"
+extern HWND Window;
+extern HINSTANCE g_hInst;
+#define USE_WINDOWS_DWORD
+#else
+#define FALSE 0
+#define TRUE 1
+#endif
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdarg.h>
+
+#include "doomtype.h"
 #include <math.h>
-#include <sys/types.h>
-#include <fcntl.h>
-// Timer stuff. Experimental.
-#include <time.h>
-#include <signal.h>
-#include "z_zone.h"
+
+#include "except.h"
+#include "fmodsound.h"
+#include "oalsound.h"
+
+#include "mpg123_decoder.h"
+#include "sndfile_decoder.h"
+
+#include "m_swap.h"
+#include "stats.h"
+#include "files.h"
+#include "c_cvars.h"
+#include "c_dispatch.h"
 #include "i_system.h"
 #include "i_sound.h"
+#include "i_music.h"
 #include "m_argv.h"
 #include "m_misc.h"
 #include "w_wad.h"
-#include "d_main.h"
+#include "i_video.h"
+#include "s_sound.h"
+#include "v_text.h"
+#include "gi.h"
+
 #include "doomdef.h"
-#include "libs/timidity/timidity.h"
-#include "libs/timidity/controls.h"
 
-#include "sound/snd_local.h"
+EXTERN_CVAR (Float, snd_sfxvolume)
+CVAR (Int, snd_samplerate, 0, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
+CVAR (Int, snd_buffersize, 0, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
+CVAR (String, snd_output, "default", CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 
-#pragma warning ( disable : 4244 )
+#ifndef NO_FMOD
+#define DEF_BACKEND "fmod"
+#elif !defined(NO_OPENAL)
+#define DEF_BACKEND "openal"
+#else
+#define DEF_BACKEND "null"
+#endif
 
-#define SFX_RATE		11050
-#define SFX_SAMPLETYPE		AL_FORMAT_MONO8
+CVAR(String, snd_backend, DEF_BACKEND, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
 
-#define MIDI_CHANNELS		2
-#define MIDI_RATE		22050
-#define MIDI_SAMPLETYPE		AL_FORMAT_STEREO8
-#define MIDI_FORMAT		AUDIO_U8
-#define MIDI_FORMAT_BYTES	1
+// killough 2/21/98: optionally use varying pitched sounds
+CVAR (Bool, snd_pitched, false, CVAR_ARCHIVE)
 
-ALuint		alMusicSourceVoice;
-ALuint		alMusicBuffer;
+SoundRenderer *GSnd;
+bool nosound;
+bool nosfx;
 
-MidiSong*	doomMusic;
-byte*		musicBuffer;
-int		totalBufferSize;
+void I_CloseSound ();
 
-bool		waitingForMusic;
-bool		musicReady;
 
-typedef struct {
-	float x;
-	float y;
-	float z;
-} vec3_t;
-
-typedef struct {
-	vec3_t OrientTop;
-	vec3_t OrientFront;
-	vec3_t Position;
-} doomListener_t;
-
-typedef struct tagActiveSound_t {
-	ALuint alSourceVoice;
-	int id;
-	int valid;
-	int start;
-	int player;
-	bool localSound;
-	mobj_t *originator;
-} activeSound_t;
-
-// cheap little struct to hold a sound
-typedef struct {
-	int vol;
-	int player;
-	int pitch;
-	int priority;
-	mobj_t *originator;
-	mobj_t *listener;
-} soundEvent_t;
-
-// array of all the possible sounds
-// in split screen we only process the loudest sound of each type per frame
-soundEvent_t soundEvents[128];
-extern int PLAYERCOUNT;
-
-// Source voice settings for all sound effects
-const ALfloat		SFX_MAX_DISTANCE = 1200.f;
-const ALfloat		SFX_REFERENCE_DISTANCE = 100.f;
-const ALfloat		SFX_ROLLOFF_FACTOR = 0.2f;
-
-// Real volumes
-const float		GLOBAL_VOLUME_MULTIPLIER = 0.5f;
-
-float			x_SoundVolume = GLOBAL_VOLUME_MULTIPLIER;
-float			x_MusicVolume = GLOBAL_VOLUME_MULTIPLIER;
-
-// The actual lengths of all sound effects.
-static int 		lengths[NUMSFX];
-ALuint			alBuffers[NUMSFX];
-activeSound_t		activeSounds[NUM_SOUNDBUFFERS] = {0};
-
-int			S_initialized = 0;
-bool			Music_initialized = false;
-static bool		soundHardwareInitialized = false;
-static int		numOutputChannels = 0;
-
-doomListener_t		doom_Listener;
-
-void			I_InitSoundChannel( int channel, int numOutputChannels_ );
-
-/*
-======================
-getsfx
-======================
-*/
-// This function loads the sound data from the WAD lump,
-// for single sound.
 //
-void* getsfx ( const char* sfxname, int* len )
+// SFX API
+//
+
+//==========================================================================
+//
+// CVAR snd_sfxvolume
+//
+// Maximum volume of a sound effect.
+//==========================================================================
+
+CUSTOM_CVAR (Float, snd_sfxvolume, 1.f, CVAR_ARCHIVE|CVAR_GLOBALCONFIG|CVAR_NOINITCALL)
 {
-	unsigned char*      sfx;
-	unsigned char*	    sfxmem;
-	int                 size;
-	char                name[20];
-	int                 sfxlump;
-	//float               scale = 1.0f;
-	
-	// Get the sound data from the WAD
-	sprintf( name, "ds%s", sfxname );
-	
-	// Scale down the plasma gun, it clips
-	//if ( strcmp( sfxname, "plasma" ) == 0 ) {
-	//	scale = 0.75f;
-	//}
-	//if ( strcmp( sfxname, "itemup" ) == 0 ) {
-	//	scale = 1.333f;
-	//}
-	
-	// If sound requested is not found in current WAD, use pistol as default
-	if ( W_CheckNumForName( name ) == -1 )
-		sfxlump = W_GetNumForName( "dspistol" );
+	if (self < 0.f)
+		self = 0.f;
+	else if (self > 1.f)
+		self = 1.f;
+	else if (GSnd != NULL)
+	{
+		GSnd->SetSfxVolume (self);
+	}
+}
+
+class NullSoundRenderer : public SoundRenderer
+{
+public:
+	virtual bool IsNull() { return true; }
+	void SetSfxVolume (float volume)
+	{
+	}
+	void SetMusicVolume (float volume)
+	{
+	}
+	SoundHandle LoadSound(BYTE *sfxdata, int length)
+	{
+		SoundHandle retval = { NULL };
+		return retval;
+	}
+	SoundHandle LoadSoundRaw(BYTE *sfxdata, int length, int frequency, int channels, int bits, int loopstart, int loopend)
+	{
+		SoundHandle retval = { NULL };
+		return retval;
+	}
+	void UnloadSound (SoundHandle sfx)
+	{
+	}
+	unsigned int GetMSLength(SoundHandle sfx)
+	{
+		// Return something that isn't 0. This is only used by some
+		// ambient sounds to specify a default minimum period.
+		return 250;
+	}
+	unsigned int GetSampleLength(SoundHandle sfx)
+	{
+		return 0;
+	}
+	float GetOutputRate()
+	{
+		return 11025;	// Lies!
+	}
+	void StopChannel(FISoundChannel *chan)
+	{
+	}
+	void ChannelVolume(FISoundChannel *, float)
+	{
+	}
+
+	// Streaming sounds.
+	SoundStream *CreateStream (SoundStreamCallback callback, int buffbytes, int flags, int samplerate, void *userdata)
+	{
+		return NULL;
+	}
+	SoundStream *OpenStream (FileReader *reader, int flags)
+	{
+		delete reader;
+		return NULL;
+	}
+
+	// Starts a sound.
+	FISoundChannel *StartSound (SoundHandle sfx, float vol, int pitch, int chanflags, FISoundChannel *reuse_chan)
+	{
+		return NULL;
+	}
+	FISoundChannel *StartSound3D (SoundHandle sfx, SoundListener *listener, float vol, FRolloffInfo *rolloff, float distscale, int pitch, int priority, const FVector3 &pos, const FVector3 &vel, int channum, int chanflags, FISoundChannel *reuse_chan)
+	{
+		return NULL;
+	}
+
+	// Marks a channel's start time without actually playing it.
+	void MarkStartTime (FISoundChannel *chan)
+	{
+	}
+
+	// Returns position of sound on this channel, in samples.
+	unsigned int GetPosition(FISoundChannel *chan)
+	{
+		return 0;
+	}
+
+	// Gets a channel's audibility (real volume).
+	float GetAudibility(FISoundChannel *chan)
+	{
+		return 0;
+	}
+
+	// Synchronizes following sound startups.
+	void Sync (bool sync)
+	{
+	}
+
+	// Pauses or resumes all sound effect channels.
+	void SetSfxPaused (bool paused, int slot)
+	{
+	}
+
+	// Pauses or resumes *every* channel, including environmental reverb.
+	void SetInactive(SoundRenderer::EInactiveState inactive)
+	{
+	}
+
+	// Updates the volume, separation, and pitch of a sound channel.
+	void UpdateSoundParams3D (SoundListener *listener, FISoundChannel *chan, bool areasound, const FVector3 &pos, const FVector3 &vel)
+	{
+	}
+
+	void UpdateListener (SoundListener *)
+	{
+	}
+	void UpdateSounds ()
+	{
+	}
+
+	bool IsValid ()
+	{
+		return true;
+	}
+	void PrintStatus ()
+	{
+		Printf("Null sound module active.\n");
+	}
+	void PrintDriversList ()
+	{
+		Printf("Null sound module uses no drivers.\n");
+	}
+	FString GatherStats ()
+	{
+		return "Null sound module has no stats.";
+	}
+};
+
+void I_InitSound ()
+{
+	/* Get command line options: */
+	nosound = !!Args->CheckParm ("-nosound");
+	nosfx = !!Args->CheckParm ("-nosfx");
+
+	GSnd = NULL;
+	if (nosound)
+	{
+		GSnd = new NullSoundRenderer;
+		I_InitMusic ();
+		return;
+	}
+
+	// This has been extended to allow falling back from FMod to OpenAL and vice versa if the currently active sound system cannot be found.
+	if (stricmp(snd_backend, "null") == 0)
+	{
+		GSnd = new NullSoundRenderer;
+	}
+	else if(stricmp(snd_backend, "fmod") == 0)
+	{
+		#ifndef NO_FMOD
+			if (IsFModExPresent())
+			{
+				GSnd = new FMODSoundRenderer;
+			}
+		#endif
+		#ifndef NO_OPENAL
+			if ((!GSnd || !GSnd->IsValid()) && IsOpenALPresent())
+			{
+				Printf (TEXTCOLOR_RED"FMod Ex Sound init failed. Trying OpenAL.\n");
+				I_CloseSound();
+				GSnd = new OpenALSoundRenderer;
+				snd_backend = "openal";
+			}
+		#endif
+	}
+	else if(stricmp(snd_backend, "openal") == 0)
+	{
+		#ifndef NO_OPENAL
+			if (IsOpenALPresent())
+			{
+				GSnd = new OpenALSoundRenderer;
+			}
+		#endif
+		#ifndef NO_FMOD
+			if ((!GSnd || !GSnd->IsValid()) && IsFModExPresent())
+			{
+				Printf (TEXTCOLOR_RED"OpenAL Sound init failed. Trying FMod Ex.\n");
+				I_CloseSound();
+				GSnd = new FMODSoundRenderer;
+				snd_backend = "fmod";
+			}
+		#endif
+	}
 	else
-		sfxlump = W_GetNumForName( name );
-	
-	// Sound lump headers are 8 bytes.
-	const int SOUND_LUMP_HEADER_SIZE_IN_BYTES = 8;
-	
-	size = W_LumpLength( sfxlump ) - SOUND_LUMP_HEADER_SIZE_IN_BYTES;
-	
-	sfx = (unsigned char*)W_CacheLumpNum( sfxlump, PU_CACHE_SHARED );
-	const unsigned char * sfxSampleStart = sfx + SOUND_LUMP_HEADER_SIZE_IN_BYTES;
-	
-	// Allocate from zone memory.
-	//sfxmem = (float*)DoomLib::Z_Malloc( size*(sizeof(float)), PU_SOUND_SHARED, 0 );
-	sfxmem = (unsigned char*)malloc( size * sizeof(unsigned char) );
-	
-	// Now copy, and convert to Xbox360 native float samples, do initial volume ramp, and scale
-	for ( int i = 0; i < size; i++ ) {
-		sfxmem[i] = sfxSampleStart[i];// * scale;
+	{
+		Printf (TEXTCOLOR_RED"%s: Unknown sound system specified\n", *snd_backend);
+		snd_backend = "null";
 	}
-	
-	// Remove the cached lump.
-	Z_Free( sfx );
-	
-	// Set length.
-	*len = size;
-	
-	// Return allocated padded data.
-	return (void *) (sfxmem);
-}
-
-/*
-======================
-I_SetChannels
-======================
-*/
-void I_SetChannels()
-{
-	// Original Doom set up lookup tables here
-}
-
-/*
-======================
-I_SetSfxVolume
-======================
-*/
-void I_SetSfxVolume( int volume )
-{
-	x_SoundVolume = ((float)volume / 15.f) * GLOBAL_VOLUME_MULTIPLIER;
-}
-
-/*
-======================
-I_GetSfxLumpNum
-======================
-*/
-//
-// Retrieve the raw data lump index
-//  for a given SFX name.
-//
-int I_GetSfxLumpNum( sfxinfo_t* sfx )
-{
-	char namebuf[9];
-	sprintf( namebuf, "ds%s", sfx->name );
-	return W_GetNumForName( namebuf );
-}
-
-/*
-======================
-I_StartSound2
-======================
-*/
-// Starting a sound means adding it
-//  to the current list of active sounds
-//  in the internal channels.
-// As the SFX info struct contains
-//  e.g. a pointer to the raw data,
-//  it is ignored.
-// As our sound handling does not handle
-//  priority, it is ignored.
-// Pitching (that is, increased speed of playback) is set
-//
-int I_StartSound2 ( int id, int player, mobj_t *origin, mobj_t *listener_origin, int pitch, int priority )
-{
-	if ( !soundHardwareInitialized || id == 0 ) {
-		return id;
+	if (!GSnd || !GSnd->IsValid ())
+	{
+		I_CloseSound();
+		GSnd = new NullSoundRenderer;
+		Printf (TEXTCOLOR_RED"Sound init failed. Using nosound.\n");
 	}
-	
-	int i;
-	activeSound_t* sound = 0;
-	int oldest = 0, oldestnum = -1;
-	
-	// these id's should not overlap
-	if ( id == sfx_sawup || id == sfx_sawidl || id == sfx_sawful || id == sfx_sawhit || id == sfx_stnmov ) {
-		// Loop all channels, check.
-		for ( i = 0; i < NUM_SOUNDBUFFERS; i++ )
+	I_InitMusic ();
+	snd_sfxvolume.Callback ();
+}
+
+
+void I_CloseSound ()
+{
+	// Free all loaded samples
+	for (unsigned i = 0; i < S_sfx.Size(); i++)
+	{
+		S_UnloadSound(&S_sfx[i]);
+	}
+
+	delete GSnd;
+	GSnd = NULL;
+}
+
+void I_ShutdownSound()
+{
+	if (GSnd != NULL)
+	{
+		S_StopAllChannels();
+		I_CloseSound();
+	}
+}
+
+const char *GetSampleTypeName(enum SampleType type)
+{
+    switch(type)
+    {
+        case SampleType_UInt8: return "Unsigned 8-bit";
+        case SampleType_Int16: return "Signed 16-bit";
+    }
+    return "(invalid sample type)";
+}
+
+const char *GetChannelConfigName(enum ChannelConfig chan)
+{
+    switch(chan)
+    {
+        case ChannelConfig_Mono: return "Mono";
+        case ChannelConfig_Stereo: return "Stereo";
+    }
+    return "(invalid channel config)";
+}
+
+
+CCMD (snd_status)
+{
+	GSnd->PrintStatus ();
+}
+
+CCMD (snd_reset)
+{
+	I_ShutdownMusic();
+	S_EvictAllChannels();
+	I_CloseSound();
+	I_InitSound();
+	S_RestartMusic();
+	S_RestoreEvictedChannels();
+}
+
+CCMD (snd_listdrivers)
+{
+	GSnd->PrintDriversList ();
+}
+
+ADD_STAT (sound)
+{
+	return GSnd->GatherStats ();
+}
+
+SoundRenderer::SoundRenderer ()
+{
+}
+
+SoundRenderer::~SoundRenderer ()
+{
+}
+
+FString SoundRenderer::GatherStats ()
+{
+	return "No stats for this sound renderer.";
+}
+
+short *SoundRenderer::DecodeSample(int outlen, const void *coded, int sizebytes, ECodecType ctype)
+{
+    MemoryReader reader((const char*)coded, sizebytes);
+    short *samples = (short*)calloc(1, outlen);
+    ChannelConfig chans;
+    SampleType type;
+    int srate;
+
+    SoundDecoder *decoder = CreateDecoder(&reader);
+    if(!decoder) return samples;
+
+    decoder->getInfo(&srate, &chans, &type);
+    if(chans != ChannelConfig_Mono || type != SampleType_Int16)
+    {
+        DPrintf("Sample is not 16-bit mono\n");
+        delete decoder;
+        return samples;
+    }
+
+    decoder->read((char*)samples, outlen);
+    delete decoder;
+    return samples;
+}
+
+void SoundRenderer::DrawWaveDebug(int mode)
+{
+}
+
+SoundStream::~SoundStream ()
+{
+}
+
+bool SoundStream::SetPosition(unsigned int pos)
+{
+	return false;
+}
+
+bool SoundStream::SetOrder(int order)
+{
+	return false;
+}
+
+FString SoundStream::GetStats()
+{
+	return "No stream stats available.";
+}
+
+//==========================================================================
+//
+// SoundRenderer :: LoadSoundVoc
+//
+//==========================================================================
+
+SoundHandle SoundRenderer::LoadSoundVoc(BYTE *sfxdata, int length)
+{
+	BYTE * data = NULL;
+	int len, frequency, channels, bits, loopstart, loopend;
+	len = frequency = channels = bits = 0;
+	loopstart = loopend = -1;
+	do if (length > 26)
+	{
+		// First pass to parse data and validate the file
+		if (strncmp ((const char *)sfxdata, "Creative Voice File", 19))
+			break;
+		int i = 26, blocktype = 0, blocksize = 0, codec = -1;
+		bool noextra = true, okay = true;
+		while (i < length)
 		{
-			sound = &activeSounds[i];
-			
-			if ( sound->valid && ( sound->id == id && sound->player == player ) ) {
-				I_StopSound( sound->id, player );
+			// Read block header
+			blocktype = sfxdata[i];
+			if (blocktype == 0)
+				break;
+			blocksize = sfxdata[i+1] + (sfxdata[i+2]<<8) + (sfxdata[i+3]<<16);
+			i += 4;
+			if (i + blocksize > length)
+			{
+				okay = false;
 				break;
 			}
-		}
-	}
-	
-	// find a valid channel, or one that has finished playing
-	for ( i = 0; i < NUM_SOUNDBUFFERS; i++ ) {
-		sound = &activeSounds[i];
-		
-		if ( !sound->valid )
-			break;
-		
-		if ( !oldest || oldest > sound->start ) {
-			oldestnum = i;
-			oldest = sound->start;
-		}
-		
-		ALint sourceState;
-		alGetSourcei( sound->alSourceVoice, AL_SOURCE_STATE, &sourceState );
-		if ( sourceState == AL_STOPPED ) {
-			break;
-		}
-	}
-	
-	// none found, so use the oldest one
-	if ( i == NUM_SOUNDBUFFERS ) {
-		i = oldestnum;
-		sound = &activeSounds[i];
-	}
-	
-	alSourceStop( sound->alSourceVoice );
-	
-	// Attach the source voice to the correct buffer
-	if ( sound->id != id ) {
-		alSourcei( sound->alSourceVoice, AL_BUFFER, 0 );
-		alSourcei( sound->alSourceVoice, AL_BUFFER, alBuffers[id] );
-	}
-	
-	// Set the source voice volume
-	alSourcef( sound->alSourceVoice, AL_GAIN, x_SoundVolume );
-	
-	// Set the source voice pitch
-	alSourcef( sound->alSourceVoice, AL_PITCH, 1 + ((float)pitch-128.f)/95.f );
-	
-	// Set the source voice position
-	ALfloat x = 0.f;
-	ALfloat y = 0.f;
-	ALfloat z = 0.f;
-	if ( origin ) {
-		if ( origin == listener_origin ) {
-			sound->localSound = true;
-		} else {
-			sound->localSound = false;
-			x = (ALfloat)(origin->x >> FRACBITS);
-			z = (ALfloat)(origin->y >> FRACBITS);
-		}
-	} else {
-		sound->localSound = true;
-	}
-	if ( sound->localSound ) {
-		x = doom_Listener.Position.x;
-		z = doom_Listener.Position.z;
-	}
-	alSource3f( sound->alSourceVoice, AL_POSITION, x, y, z );
-	
-	alSourcePlay( sound->alSourceVoice );
-	
-	// Set id, and start time
-	sound->id = id;
-	sound->start = ::g->gametic;
-	sound->valid = 1;
-	sound->player = player;
-	sound->originator = origin;
-	
-	return id;
-}
 
-/*
-======================
-I_ProcessSoundEvents
-======================
-*/
-void I_ProcessSoundEvents( void )
-{
-	for( int i = 0; i < 128; i++ ) {
-		if( soundEvents[i].pitch ) {
-			I_StartSound2( i, soundEvents[i].player, soundEvents[i].originator, soundEvents[i].listener,
-					soundEvents[i].pitch, soundEvents[i].priority );
+			// Read block data
+			switch (blocktype)
+			{
+			case 1: // Sound data
+				if (noextra && (codec == -1 || codec == sfxdata[i+1]))
+				{
+					frequency = 1000000/(256 - sfxdata[i]);
+					channels = 1;
+					codec = sfxdata[i+1];
+					if (codec == 0)
+						bits = 8;
+					else if (codec == 4)
+						bits = -16;
+					else okay = false;
+					len += blocksize - 2;
+				}
+				break;
+			case 2: // Sound data continuation
+				if (codec == -1)
+					okay = false;
+				len += blocksize;
+				break;
+			case 3: // Silence
+				if (frequency == 1000000/(256 - sfxdata[i+2]))
+				{
+					int silength = 1 + sfxdata[i] + (sfxdata[i+1]<<8);
+					if (codec == 0) // 8-bit unsigned PCM
+						len += silength;
+					else if (codec == 4) // 16-bit signed PCM
+						len += silength<<1;
+					else okay = false;
+				} else okay = false;
+				break;
+			case 4: // Mark (ignored)
+			case 5: // Text (ignored)
+				break;
+			case 6: // Repeat start
+				loopstart = len;
+				break;
+			case 7: // Repeat end
+				loopend = len;
+				if (loopend < loopstart)
+					okay = false;
+				break;
+			case 8: // Extra info
+				noextra = false;
+				if (codec == -1)
+				{
+					codec = sfxdata[i+2];
+					channels = 1+sfxdata[i+3];
+					frequency = 256000000/(channels * (65536 - (sfxdata[i]+(sfxdata[i+1]<<8))));
+				} else okay = false;
+				break;
+			case 9: // Sound data in new format
+				if (codec == -1)
+				{
+					frequency = sfxdata[i] + (sfxdata[i+1]<<8) + (sfxdata[i+2]<<16) + (sfxdata[i+3]<<24);
+					bits = sfxdata[i+4];
+					channels = sfxdata[i+5];
+					codec = sfxdata[i+6] + (sfxdata[i+7]<<8);
+					if (codec == 0)
+						bits = 8;
+					else if (codec == 4)
+						bits = -16;
+					else okay = false;
+					len += blocksize - 12;
+				} else okay = false;
+				break;
+			default: // Unknown block type
+				okay = false;
+				DPrintf ("Unknown VOC block type %i\n", blocktype);
+				break;
+			}
+			// Move to next block
+			i += blocksize;
 		}
-	}
-	memset( soundEvents, 0, sizeof( soundEvents ) );
-}
 
-/*
-======================
-I_StartSound
-======================
-*/
-int I_StartSound ( int id, mobj_t *origin, mobj_t *listener_origin, int vol, int pitch, int priority )
-{
-	// only allow player 0s sounds in intermission and finale screens
-	if( ::g->gamestate != GS_LEVEL && DoomLib::GetPlayer() != 0 ) {
-		return 0;
-	}
-	
-	// if we're only one player or we're trying to play the chainsaw sound, do it normal
-	// otherwise only allow one sound of each type per frame
-	if( PLAYERCOUNT == 1 || id == sfx_sawup || id == sfx_sawidl || id == sfx_sawful || id == sfx_sawhit ) {
-		return I_StartSound2( id, ::g->consoleplayer, origin, listener_origin, pitch, priority );
-	} else {
-		if( soundEvents[ id ].vol < vol ) {
-			soundEvents[ id ].player = DoomLib::GetPlayer();
-			soundEvents[ id ].pitch = pitch;
-			soundEvents[ id ].priority = priority;
-			soundEvents[ id ].vol = vol;
-			soundEvents[ id ].originator = origin;
-			soundEvents[ id ].listener = listener_origin;
-		}
-		return id;
-	}
-}
-
-/*
-======================
-I_StopSound
-======================
-*/
-void I_StopSound ( int handle, int player )
-{
-	// You need the handle returned by StartSound.
-	// Would be looping all channels,
-	// tracking down the handle,
-	// and setting the channel to zero.
-	int i;
-	activeSound_t* sound = 0;
-	
-	for ( i = 0; i < NUM_SOUNDBUFFERS; ++i ) {
-		sound = &activeSounds[i];
-		if ( !sound->valid || sound->id != handle || (player >= 0 && sound->player != player) )
-			continue;
-		break;
-	}
-	
-	if ( i == NUM_SOUNDBUFFERS )
-		return;
-	
-	// Stop the sound
-	alSourceStop( sound->alSourceVoice );
-	
-	sound->valid = 0;
-	sound->player = -1;
-}
-
-/*
-======================
-I_SoundIsPlaying
-======================
-*/
-int I_SoundIsPlaying( int handle )
-{
-	if ( !soundHardwareInitialized ) {
-		return 0;
-	}
-	
-	int i;
-	activeSound_t* sound;
-	
-	for ( i = 0; i < NUM_SOUNDBUFFERS; ++i ) {
-		sound = &activeSounds[i];
-		if ( !sound->valid || sound->id != handle )
-			continue;
-		
-		ALint sourceState;
-		alGetSourcei( sound->alSourceVoice, AL_SOURCE_STATE, &sourceState );
-		if ( sourceState == AL_PLAYING ) {
-			return 1;
-		}
-	}
-	
-	return 0;
-}
-
-/*
-======================
-I_UpdateSound
-======================
-*/
-// Update listener position and go through all the
-// channels and update sound positions.
-void I_UpdateSound( void )
-{
-	if ( !soundHardwareInitialized ) {
-		return;
-	}
-	
-	// Update listener orientation and position
-	mobj_t *playerObj = ::g->players[0].mo;
-	if ( playerObj ) {
-		angle_t	pAngle = playerObj->angle;
-		fixed_t fx, fz;
-		
-		pAngle >>= ANGLETOFINESHIFT;
-		
-		fx = finecosine[pAngle];
-		fz = finesine[pAngle];
-		
-		doom_Listener.OrientFront.x = (float)(fx) / 65535.f;
-		doom_Listener.OrientFront.y = 0.f;
-		doom_Listener.OrientFront.z = (float)(fz) / 65535.f;
-		doom_Listener.Position.x = (float)(playerObj->x >> FRACBITS);
-		doom_Listener.Position.y = 0.f;
-		doom_Listener.Position.z = (float)(playerObj->y >> FRACBITS);
-	} else {
-		doom_Listener.OrientFront.x = 0.f;
-		doom_Listener.OrientFront.y = 0.f;
-		doom_Listener.OrientFront.z = 1.f;
-		
-		doom_Listener.Position.x = 0.f;
-		doom_Listener.Position.y = 0.f;
-		doom_Listener.Position.z = 0.f;
-	}
-	
-	ALfloat listenerOrientation[] = { doom_Listener.OrientFront.x, doom_Listener.OrientFront.y,
-		doom_Listener.OrientFront.z, doom_Listener.OrientTop.x, doom_Listener.OrientTop.y,
-		doom_Listener.OrientTop.z };
-	alListenerfv( AL_ORIENTATION, listenerOrientation );
-	alListener3f( AL_POSITION, doom_Listener.Position.x, doom_Listener.Position.y, doom_Listener.Position.z );
-	
-	// Update playing source voice positions
-	int i;
-	activeSound_t* sound;
-	for ( i=0; i < NUM_SOUNDBUFFERS; i++ ) {
-		sound = &activeSounds[i];
-		
-		if ( !sound->valid ) {
-			continue;
-		}
-		
-		ALint sourceState;
-		alGetSourcei( sound->alSourceVoice, AL_SOURCE_STATE, &sourceState );
-		if ( sourceState == AL_PLAYING ) {
-			if ( sound->localSound ) {
-				alSource3f( sound->alSourceVoice, AL_POSITION, doom_Listener.Position.x,
-						doom_Listener.Position.y, doom_Listener.Position.z );
-			} else {
-				ALfloat x = (ALfloat)(sound->originator->x >> FRACBITS);
-				ALfloat y = 0.f;
-				ALfloat z = (ALfloat)(sound->originator->y >> FRACBITS);
-				
-				alSource3f( sound->alSourceVoice, AL_POSITION, x, y, z );
+		// Second pass to write the data
+		if (okay)
+		{
+			data = new BYTE[len];
+			i = 26;
+			int j = 0;
+			while (i < length)
+			{
+				// Read block header again
+				blocktype = sfxdata[i];
+				if (blocktype == 0) break;
+				blocksize = sfxdata[i+1] + (sfxdata[i+2]<<8) + (sfxdata[i+3]<<16);
+				i += 4;
+				switch (blocktype)
+				{
+				case 1: memcpy(data+j, sfxdata+i+2,  blocksize-2 ); j += blocksize-2;	break;
+				case 2: memcpy(data+j, sfxdata+i,    blocksize   ); j += blocksize;		break;
+				case 9: memcpy(data+j, sfxdata+i+12, blocksize-12); j += blocksize-12;	break;
+				case 3:
+					{
+						int silength = 1 + sfxdata[i] + (sfxdata[i+1]<<8);
+						if (bits == 8)
+						{
+							memset(data+j, 128, silength);
+							j += silength;
+						}
+						else if (bits == -16)
+						{
+							memset(data+j, 0, silength<<1);
+							j += silength<<1;
+						}
+					}
+					break;
+				default: break;
+				}
+				i += blocksize;
 			}
 		}
-	}
+
+	} while (false);
+	SoundHandle retval = LoadSoundRaw(data, len, frequency, channels, bits, loopstart, loopend);
+	if (data) delete[] data;
+	return retval;
 }
 
-/*
-======================
-I_UpdateSoundParams
-======================
-*/
-void I_UpdateSoundParams( int handle, int vol, int sep, int pitch )
+SoundStream *SoundRenderer::OpenStream(const char *url, int flags)
 {
+    return 0;
 }
 
-/*
-======================
-I_ShutdownSound
-======================
-*/
-void I_ShutdownSound( void )
+SoundDecoder *SoundRenderer::CreateDecoder(FileReader *reader)
 {
-	int done = 0;
-	int i;
-	
-	if ( S_initialized ) {
-		// Stop all sounds
-		for ( i = 0; i < NUM_SOUNDBUFFERS; i++ ) {
-			activeSound_t * sound = &activeSounds[i];
-			
-			if ( !sound ) {
-				continue;
-			}
-			
-			I_StopSound( sound->id, 0 );
-		}
-		
-		// Free allocated sound memory
-		for ( i = 1; i < NUMSFX; i++ ) {
-			if ( S_sfx[i].data && !(S_sfx[i].link) ) {
-				free( S_sfx[i].data );
-			}
-		}
-	}
-	
-	I_StopSong( 0 );
-	
-	S_initialized = 0;
+    SoundDecoder *decoder = NULL;
+    int pos = reader->Tell();
+
+#ifdef HAVE_MPG123
+		decoder = new MPG123Decoder;
+		if (decoder->open(reader))
+			return decoder;
+		reader->Seek(pos, SEEK_SET);
+
+		delete decoder;
+		decoder = NULL;
+#endif
+#ifdef HAVE_SNDFILE
+		decoder = new SndFileDecoder;
+		if (decoder->open(reader))
+			return decoder;
+		reader->Seek(pos, SEEK_SET);
+
+		delete decoder;
+		decoder = NULL;
+#endif
+    return decoder;
 }
 
-/*
-======================
-I_InitSoundHardware
 
-Called from the tech4x initialization code. Sets up Doom classic's
-sound channels.
-======================
-*/
-void I_InitSoundHardware( int numOutputChannels_, int channelMask )
+// Default readAll implementation, for decoders that can't do anything better
+TArray<char> SoundDecoder::readAll()
 {
-	::numOutputChannels = numOutputChannels_;
-	
-	// Initialize source voices
-	for ( int i = 0; i < NUM_SOUNDBUFFERS; i++ ) {
-		I_InitSoundChannel( i, numOutputChannels );
-	}
+    TArray<char> output;
+    unsigned total = 0;
+    unsigned got;
 
-	// Create OpenAL buffers for all sounds
-	for ( int i = 1; i < NUMSFX; i++ ) {
-		alGenBuffers( (ALuint)1, &alBuffers[i] );
-	}
-	
-	I_InitMusic();
-	
-	soundHardwareInitialized = true;
-}
-
-/*
-======================
-I_ShutdownSoundHardware
-
-Called from the tech4x shutdown code. Tears down Doom classic's
-sound channels.
-======================
-*/
-void I_ShutdownSoundHardware()
-{
-	soundHardwareInitialized = false;
-	
-	I_ShutdownMusic();
-	
-	// Delete all source voices
-	for ( int i = 0; i < NUM_SOUNDBUFFERS; ++i ) {
-		activeSound_t * sound = &activeSounds[i];
-		
-		if ( !sound ) {
-			continue;
-		}
-		
-		if ( sound->alSourceVoice ) {
-			alSourceStop( sound->alSourceVoice );
-			alSourcei( sound->alSourceVoice, AL_BUFFER, 0 );
-			alDeleteSources( 1, &sound->alSourceVoice );
-		}
-	}
-
-	// Delete OpenAL buffers for all sounds
-	for ( int i = 0; i < NUMSFX; i++ ) {
-		alDeleteBuffers( 1, &alBuffers[i] );
-	}
-}
-
-/*
-======================
-I_InitSoundChannel
-======================
-*/
-void I_InitSoundChannel( int channel, int numOutputChannels_ )
-{
-	activeSound_t *soundchannel = &activeSounds[ channel ];
-	
-	alGenSources( (ALuint)1, &soundchannel->alSourceVoice );
-	
-	alSource3f( soundchannel->alSourceVoice, AL_VELOCITY, 0.f, 0.f, 0.f );
-	alSourcef( soundchannel->alSourceVoice, AL_LOOPING, AL_FALSE );
-	alSourcef( soundchannel->alSourceVoice, AL_MAX_DISTANCE, SFX_MAX_DISTANCE );
-	alSourcef( soundchannel->alSourceVoice, AL_REFERENCE_DISTANCE, SFX_REFERENCE_DISTANCE );
-	alSourcef( soundchannel->alSourceVoice, AL_ROLLOFF_FACTOR, SFX_ROLLOFF_FACTOR );
-}
-
-/*
-======================
-I_InitSound
-======================
-*/
-void I_InitSound()
-{
-	if ( S_initialized == 0 ) {
-		// Set up listener parameters
-		doom_Listener.OrientFront.x	= 0.f;
-		doom_Listener.OrientFront.y	= 0.f;
-		doom_Listener.OrientFront.z	= 1.f;
-		
-		doom_Listener.OrientTop.x	= 0.f;
-		doom_Listener.OrientTop.y	= -1.f;
-		doom_Listener.OrientTop.z	= 0.f;
-		
-		doom_Listener.Position.x	= 0.f;
-		doom_Listener.Position.y	= 0.f;
-		doom_Listener.Position.z	= 0.f;
-		
-		for ( int i = 1; i < NUMSFX; i++ ) {
-			// Alias? Example is the chaingun sound linked to pistol.
-			if ( !S_sfx[i].link ) {
-				// Load data from WAD file.
-				S_sfx[i].data = getsfx( S_sfx[i].name, &lengths[i] );
-			} else {
-				// Previously loaded already?
-				S_sfx[i].data = S_sfx[i].link->data;
-				lengths[i] = lengths[ (S_sfx[i].link-S_sfx) / sizeof(sfxinfo_t) ];
-			}
-			if ( S_sfx[i].data ) {
-				alBufferData( alBuffers[i], SFX_SAMPLETYPE, (byte*)S_sfx[i].data, lengths[i], SFX_RATE );
-			}
-		}
-		
-		S_initialized = 1;
-	}
-}
-
-/*
-======================
-I_SubmitSound
-======================
-*/
-void I_SubmitSound( void )
-{
-	// Only do this for player 0, it will still handle positioning
-	//		for other players, but it can't be outside the game
-	//		frame like the soundEvents are.
-	if ( DoomLib::GetPlayer() == 0 ) {
-		// Do 3D positioning of sounds
-		I_UpdateSound();
-		
-		// Change music if required
-		I_UpdateMusic();
-	}
-}
-
-
-// =========================================================
-// =========================================================
-// Background Music
-// =========================================================
-// =========================================================
-
-/*
-======================
-I_SetMusicVolume
-======================
-*/
-void I_SetMusicVolume( int volume )
-{
-	x_MusicVolume = (float)volume / 15.f;
-}
-
-/*
-======================
-I_InitMusic
-======================
-*/
-void I_InitMusic( void )
-{
-	if ( !Music_initialized ) {
-		// Initialize Timidity
-		Timidity_Init( MIDI_RATE, MIDI_FORMAT, MIDI_CHANNELS, MIDI_RATE, "classicmusic/gravis.cfg" );
-		
-		musicBuffer = NULL;
-		totalBufferSize = 0;
-		waitingForMusic = false;
-		musicReady = false;
-		
-		alGenSources( (ALuint)1, &alMusicSourceVoice );
-		
-		alSourcef( alMusicSourceVoice, AL_PITCH, 1.f );
-		alSourcef( alMusicSourceVoice, AL_LOOPING, AL_TRUE );
-		
-		alGenBuffers( (ALuint)1, &alMusicBuffer );
-		
-		Music_initialized = true;
-	}
-}
-
-/*
-======================
-I_ShutdownMusic
-======================
-*/
-void I_ShutdownMusic( void )
-{
-	if ( Music_initialized ) {
-		if ( alMusicSourceVoice ) {
-			I_StopSong( 0 );
-			alSourcei( alMusicSourceVoice, AL_BUFFER, 0 );
-			alDeleteSources( 1, &alMusicSourceVoice );
-		}
-		
-		if ( alMusicBuffer ) {
-			alDeleteBuffers( 1, &alMusicBuffer );
-		}
-		
-		if ( musicBuffer ) {
-			free( musicBuffer );
-			musicBuffer = NULL;
-		}
-		
-		Timidity_Shutdown();
-	}
-	
-	totalBufferSize = 0;
-	waitingForMusic = false;
-	musicReady = false;
-	
-	Music_initialized = false;
-}
-
-int Mus2Midi(unsigned char* bytes, unsigned char* out, int* len);
-
-namespace {
-	const int MaxMidiConversionSize = 1024 * 1024;
-	unsigned char midiConversionBuffer[MaxMidiConversionSize];
-}
-
-/*
-======================
-I_LoadSong
-======================
-*/
-void I_LoadSong( const char * songname )
-{
-	idStr lumpName = "d_";
-	lumpName += static_cast< const char * >( songname );
-	
-	unsigned char * musFile = static_cast< unsigned char * >( W_CacheLumpName( lumpName.c_str(), PU_STATIC_SHARED ) );
-	
-	int length = 0;
-	Mus2Midi( musFile, midiConversionBuffer, &length );
-	
-	doomMusic = Timidity_LoadSongMem( midiConversionBuffer, length );
-	
-	if ( doomMusic ) {
-		musicBuffer = (byte *)malloc( MIDI_CHANNELS * MIDI_FORMAT_BYTES * doomMusic->samples );
-		totalBufferSize = doomMusic->samples * MIDI_CHANNELS * MIDI_FORMAT_BYTES;
-		Timidity_Start( doomMusic );
-		
-		int rc = RC_NO_RETURN_VALUE;
-		int num_bytes = 0;
-		int offset = 0;
-		
-		do {
-			rc = Timidity_PlaySome( musicBuffer + offset, MIDI_RATE, &num_bytes );
-			offset += num_bytes;
-		} while ( rc != RC_TUNE_END );
-		
-		Timidity_Stop();
-		Timidity_FreeSong( doomMusic );
-	}
-	
-	musicReady = true;
-}
-
-/*
-======================
-I_PlaySong
-======================
-*/
-void I_PlaySong( const char *songname, int looping )
-{
-	if ( !Music_initialized ) {
-		return;
-	}
-	
-	I_StopSong( 0 );
-	
-	// Clear old state
-	if ( musicBuffer ) {
-		free( musicBuffer );
-		musicBuffer = 0;
-	}
-	
-	musicReady = false;
-	I_LoadSong( songname );
-	waitingForMusic = true;
-	
-	if ( DoomLib::GetPlayer() >= 0 ) {
-		::g->mus_looping = looping;
-	}
-}
-
-/*
-======================
-I_UpdateMusic
-======================
-*/
-void I_UpdateMusic( void )
-{
-	if ( !Music_initialized ) {
-		return;
-	}
-	
-	if ( alMusicSourceVoice ) {
-		// Set the volume
-		alSourcef( alMusicSourceVoice, AL_GAIN, x_MusicVolume * GLOBAL_VOLUME_MULTIPLIER );
-	}
-	
-	if ( waitingForMusic ) {
-		if ( musicReady && alMusicSourceVoice ) {
-			if ( musicBuffer ) {
-				alSourcei( alMusicSourceVoice, AL_BUFFER, 0 );
-				alBufferData( alMusicBuffer, MIDI_SAMPLETYPE, musicBuffer, totalBufferSize, MIDI_RATE );
-				alSourcei( alMusicSourceVoice, AL_BUFFER, alMusicBuffer );
-				alSourcePlay( alMusicSourceVoice );
-			}
-			
-			waitingForMusic = false;
-		}
-	}
-}
-
-/*
-======================
-I_PauseSong
-======================
-*/
-void I_PauseSong ( int handle )
-{
-	if ( !Music_initialized || !alMusicSourceVoice ) {
-		return;
-	}
-	
-	alSourcePause( alMusicSourceVoice );
-}
-
-/*
-======================
-I_ResumeSong
-======================
-*/
-void I_ResumeSong ( int handle )
-{
-	if ( !Music_initialized || !alMusicSourceVoice ) {
-		return;
-	}
-	
-	alSourcePlay( alMusicSourceVoice );
-}
-
-/*
-======================
-I_StopSong
-======================
-*/
-void I_StopSong( int handle )
-{
-	if ( !Music_initialized || !alMusicSourceVoice ) {
-		return;
-	}
-	
-	alSourceStop( alMusicSourceVoice );
-}
-
-/*
-======================
-I_UnRegisterSong
-======================
-*/
-void I_UnRegisterSong( int handle )
-{
-	// does nothing
-}
-
-/*
-======================
-I_RegisterSong
-======================
-*/
-int I_RegisterSong( void* data, int length )
-{
-	// does nothing
-	return 0;
+    output.Resize(total+32768);
+    while((got=(unsigned)read(&output[total], output.Size()-total)) > 0)
+    {
+        total += got;
+        output.Resize(total*2);
+    }
+    output.Resize(total);
+    return output;
 }

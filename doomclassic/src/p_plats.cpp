@@ -1,319 +1,442 @@
-/*
-===========================================================================
-
-Doom 3 BFG Edition GPL Source Code
-Copyright (C) 1993-2012 id Software LLC, a ZeniMax Media company. 
-
-This file is part of the Doom 3 BFG Edition GPL Source Code ("Doom 3 BFG Edition Source Code").  
-
-Doom 3 BFG Edition Source Code is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-Doom 3 BFG Edition Source Code is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with Doom 3 BFG Edition Source Code.  If not, see <http://www.gnu.org/licenses/>.
-
-In addition, the Doom 3 BFG Edition Source Code is also subject to certain additional terms. You should have received a copy of these additional terms immediately following the terms and conditions of the GNU General Public License which accompanied the Doom 3 BFG Edition Source Code.  If not, please request a copy in writing from id Software at the address below.
-
-If you have questions concerning this license or the applicable additional terms, you may contact in writing id Software LLC, c/o ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
-
-===========================================================================
-*/
-
-#include "Precompiled.h"
-#include "globaldata.h"
-
+// Emacs style mode select	 -*- C++ -*- 
+//-----------------------------------------------------------------------------
+//
+// $Id:$
+//
+// Copyright (C) 1993-1996 by id Software, Inc.
+//
+// This source is available for distribution and/or modification
+// only under the terms of the DOOM Source Code License as
+// published by id Software. All rights reserved.
+//
+// The source is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// FITNESS FOR A PARTICULAR PURPOSE. See the DOOM Source Code License
+// for more details.
+//
+// $Log:$
+//
+// DESCRIPTION:
+//		Plats (i.e. elevator platforms) code, raising/lowering.
+//
+//-----------------------------------------------------------------------------
 
 #include "i_system.h"
-#include "z_zone.h"
 #include "m_random.h"
-
 #include "doomdef.h"
 #include "p_local.h"
-
-#include "s_sound.h"
-
-// State.
+#include "p_lnspec.h"
+#include "s_sndseq.h"
 #include "doomstat.h"
 #include "r_state.h"
+#include "gi.h"
+#include "farchive.h"
 
-// Data.
-#include "sounds.h"
+static FRandom pr_doplat ("DoPlat");
 
+IMPLEMENT_CLASS (DPlat)
 
+inline FArchive &operator<< (FArchive &arc, DPlat::EPlatType &type)
+{
+	BYTE val = (BYTE)type;
+	arc << val;
+	type = (DPlat::EPlatType)val;
+	return arc;
+}
+inline FArchive &operator<< (FArchive &arc, DPlat::EPlatState &state)
+{
+	BYTE val = (BYTE)state;
+	arc << val;
+	state = (DPlat::EPlatState)val;
+	return arc;
+}
 
+DPlat::DPlat ()
+{
+}
 
+void DPlat::Serialize (FArchive &arc)
+{
+	Super::Serialize (arc);
+	arc << m_Speed
+		<< m_Low
+		<< m_High
+		<< m_Wait
+		<< m_Count
+		<< m_Status
+		<< m_OldStatus
+		<< m_Crush
+		<< m_Tag
+		<< m_Type;
+}
+
+void DPlat::PlayPlatSound (const char *sound)
+{
+	if (m_Sector->Flags & SECF_SILENTMOVE) return;
+
+	if (m_Sector->seqType >= 0)
+	{
+		SN_StartSequence (m_Sector, CHAN_FLOOR, m_Sector->seqType, SEQ_PLATFORM, 0);
+	}
+	else if (m_Sector->SeqName != NAME_None)
+	{
+		SN_StartSequence (m_Sector, CHAN_FLOOR, m_Sector->SeqName, 0);
+	}
+	else
+	{
+		SN_StartSequence (m_Sector, CHAN_FLOOR, sound, 0);
+	}
+}
 
 //
 // Move a plat up and down
 //
-void T_PlatRaise(plat_t* plat)
+void DPlat::Tick ()
 {
-    result_e	res;
-	
-    switch(plat->status)
-    {
-      case up:
-	res = T_MovePlane(plat->sector,
-			  plat->speed,
-			  plat->high,
-			  plat->crush,0,1);
-					
-	if (plat->type == raiseAndChange
-	    || plat->type == raiseToNearestAndChange)
+	EResult res;
+		
+	switch (m_Status)
 	{
-	    if (!(::g->leveltime&7))
-		S_StartSound( &plat->sector->soundorg,
-			     sfx_stnmov);
-	}
-	
-				
-	if (res == crushed && (!plat->crush))
-	{
-	    plat->count = plat->wait;
-	    plat->status = down;
-	    S_StartSound( &plat->sector->soundorg,
-			 sfx_pstart);
-	}
-	else
-	{
-	    if (res == pastdest)
-	    {
-		plat->count = plat->wait;
-		plat->status = waiting;
-		S_StartSound( &plat->sector->soundorg,
-			     sfx_pstop);
-
-		switch(plat->type)
+	case up:
+		res = MoveFloor (m_Speed, m_High, m_Crush, 1, false);
+										
+		if (res == crushed && (m_Crush == -1))
 		{
-		  case blazeDWUS:
-		  case downWaitUpStay:
-		    P_RemoveActivePlat(plat);
-		    break;
-		    
-		  case raiseAndChange:
-		  case raiseToNearestAndChange:
-		    P_RemoveActivePlat(plat);
-		    break;
-		    
-		  default:
-		    break;
+			m_Count = m_Wait;
+			m_Status = down;
+			PlayPlatSound ("Platform");
 		}
-	    }
-	}
-	break;
-	
-      case	down:
-	res = T_MovePlane(plat->sector,plat->speed,plat->low,false,0,-1);
+		else if (res == pastdest)
+		{
+			SN_StopSequence (m_Sector, CHAN_FLOOR);
+			if (m_Type != platToggle)
+			{
+				m_Count = m_Wait;
+				m_Status = waiting;
 
-	if (res == pastdest)
-	{
-	    plat->count = plat->wait;
-	    plat->status = waiting;
-	    S_StartSound( &plat->sector->soundorg,sfx_pstop);
+				switch (m_Type)
+				{
+					case platRaiseAndStayLockout:
+						// Instead of keeping the dead thinker like Heretic did let's 
+						// better use a flag to avoid problems elsewhere. For example,
+						// keeping the thinker would make tagwait wait indefinitely.
+						m_Sector->planes[sector_t::floor].Flags |= PLANEF_BLOCKED; 
+					case platRaiseAndStay:
+					case platDownByValue:
+					case platDownWaitUpStay:
+					case platDownWaitUpStayStone:
+					case platUpByValueStay:
+					case platDownToNearestFloor:
+					case platDownToLowestCeiling:
+						Destroy ();
+						break;
+					default:
+						break;
+				}
+			}
+			else
+			{
+				m_OldStatus = m_Status;		//jff 3/14/98 after action wait  
+				m_Status = in_stasis;		//for reactivation of toggle
+			}
+		}
+		break;
+		
+	case down:
+		res = MoveFloor (m_Speed, m_Low, -1, -1, false);
+
+		if (res == pastdest)
+		{
+			SN_StopSequence (m_Sector, CHAN_FLOOR);
+			// if not an instant toggle, start waiting
+			if (m_Type != platToggle)		//jff 3/14/98 toggle up down
+			{								// is silent, instant, no waiting
+				m_Count = m_Wait;
+				m_Status = waiting;
+
+				switch (m_Type)
+				{
+					case platUpWaitDownStay:
+					case platUpNearestWaitDownStay:
+					case platUpByValue:
+						Destroy ();
+						break;
+					default:
+						break;
+				}
+			}
+			else
+			{	// instant toggles go into stasis awaiting next activation
+				m_OldStatus = m_Status;		//jff 3/14/98 after action wait  
+				m_Status = in_stasis;		//for reactivation of toggle
+			}
+		}
+		else if (res == crushed && m_Crush < 0 && m_Type != platToggle)
+		{
+			m_Status = up;
+			m_Count = m_Wait;
+			PlayPlatSound ("Platform");
+		}
+
+		//jff 1/26/98 remove the plat if it bounced so it can be tried again
+		//only affects plats that raise and bounce
+
+		// remove the plat if it's a pure raise type
+		switch (m_Type)
+		{
+			case platUpByValueStay:
+			case platRaiseAndStay:
+			case platRaiseAndStayLockout:
+				Destroy ();
+			default:
+				break;
+		}
+
+		break;
+		
+	case waiting:
+		if (m_Count > 0 && !--m_Count)
+		{
+			if (m_Sector->floorplane.d == m_Low)
+				m_Status = up;
+			else
+				m_Status = down;
+
+			if (m_Type == platToggle)
+				SN_StartSequence (m_Sector, CHAN_FLOOR, "Silence", 0);
+			else
+				PlayPlatSound ("Platform");
+		}
+		break;
+
+	case in_stasis:
+		break;
 	}
-	break;
-	
-      case	waiting:
-	if (!--plat->count)
-	{
-	    if (plat->sector->floorheight == plat->low)
-		plat->status = up;
-	    else
-		plat->status = down;
-	    S_StartSound( &plat->sector->soundorg,sfx_pstart);
-	}
-      case	in_stasis:
-	break;
-    }
 }
 
+DPlat::DPlat (sector_t *sector)
+	: DMovingFloor (sector)
+{
+}
 
 //
 // Do Platforms
-//  "amount" is only used for SOME platforms.
+//	[RH] Changed amount to height and added delay,
+//		 lip, change, tag, and speed parameters.
 //
-int
-EV_DoPlat
-( line_t*	line,
-  plattype_e	type,
-  int		amount )
+bool EV_DoPlat (int tag, line_t *line, DPlat::EPlatType type, int height,
+				int speed, int delay, int lip, int change)
 {
-    plat_t*	plat;
-    int		secnum;
-    int		rtn;
-    sector_t*	sec;
-	
-    secnum = -1;
-    rtn = 0;
+	DPlat *plat;
+	int secnum;
+	sector_t *sec;
+	bool rtn = false;
+	bool manual = false;
+	fixed_t newheight = 0;
+	vertex_t *spot;
 
-    
-    //	Activate all <type> plats that are in_stasis
-    switch(type)
-    {
-      case perpetualRaise:
-	P_ActivateInStasis(line->tag);
-	break;
-	
-      default:
-	break;
-    }
-	
-    while ((secnum = P_FindSectorFromLineTag(line,secnum)) >= 0)
-    {
-	sec = &::g->sectors[secnum];
+	if (tag != 0)
+	{
+		//	Activate all <type> plats that are in_stasis
+		switch (type)
+		{
+		case DPlat::platToggle:
+			rtn = true;
+		case DPlat::platPerpetualRaise:
+			P_ActivateInStasis (tag);
+			break;
 
-	if (sec->specialdata)
-	    continue;
-	
-	// Find lowest & highest floors around sector
-	rtn = 1;
-	plat = (plat_t*)DoomLib::Z_Malloc( sizeof(*plat), PU_LEVEL, 0);
-	P_AddThinker(&plat->thinker);
+		default:
+			break;
+		}
+	}
+
+
+	// [RH] If tag is zero, use the sector on the back side
+	//		of the activating line (if any).
+	FSectorTagIterator itr(tag, line);
+	while ((secnum = itr.Next()) >= 0)
+	{
+		sec = &sectors[secnum];
+
+		if (sec->PlaneMoving(sector_t::floor))
+		{
+			continue;
+		}
+
+		// Find lowest & highest floors around sector
+		rtn = true;
+		plat = new DPlat (sec);
+
+		plat->m_Type = type;
+		plat->m_Crush = -1;
+		plat->m_Tag = tag;
+		plat->m_Speed = speed;
+		plat->m_Wait = delay;
+
+		//jff 1/26/98 Avoid raise plat bouncing a head off a ceiling and then
+		//going down forever -- default lower to plat height when triggered
+		plat->m_Low = sec->floorplane.d;
+
+		if (change)
+		{
+			if (line)
+				sec->SetTexture(sector_t::floor, line->sidedef[0]->sector->GetTexture(sector_t::floor));
+			if (change == 1) sec->ClearSpecial();
+		}
+
+		switch (type)
+		{
+		case DPlat::platRaiseAndStay:
+		case DPlat::platRaiseAndStayLockout:
+			newheight = sec->FindNextHighestFloor (&spot);
+			plat->m_High = sec->floorplane.PointToDist (spot, newheight);
+			plat->m_Low = sec->floorplane.d;
+			plat->m_Status = DPlat::up;
+			plat->PlayPlatSound ("Floor");
+			sec->ClearSpecial();
+			break;
+
+		case DPlat::platUpByValue:
+		case DPlat::platUpByValueStay:
+			newheight = sec->floorplane.ZatPoint (0, 0) + height;
+			plat->m_High = sec->floorplane.PointToDist (0, 0, newheight);
+			plat->m_Low = sec->floorplane.d;
+			plat->m_Status = DPlat::up;
+			plat->PlayPlatSound ("Floor");
+			break;
 		
-	plat->type = type;
-	plat->sector = sec;
-	plat->sector->specialdata = plat;
-	plat->thinker.function.acp1 = (actionf_p1) T_PlatRaise;
-	plat->crush = false;
-	plat->tag = line->tag;
-	
-	switch(type)
-	{
-	  case raiseToNearestAndChange:
-	    plat->speed = PLATSPEED/2;
-	    sec->floorpic = ::g->sides[line->sidenum[0]].sector->floorpic;
-	    plat->high = P_FindNextHighestFloor(sec,sec->floorheight);
-	    plat->wait = 0;
-	    plat->status = up;
-	    // NO MORE DAMAGE, IF APPLICABLE
-	    sec->special = 0;		
+		case DPlat::platDownByValue:
+			newheight = sec->floorplane.ZatPoint (0, 0) - height;
+			plat->m_Low = sec->floorplane.PointToDist (0, 0, newheight);
+			plat->m_High = sec->floorplane.d;
+			plat->m_Status = DPlat::down;
+			plat->PlayPlatSound ("Floor");
+			break;
 
-	    S_StartSound( &sec->soundorg,sfx_stnmov);
-	    break;
-	    
-	  case raiseAndChange:
-	    plat->speed = PLATSPEED/2;
-	    sec->floorpic = ::g->sides[line->sidenum[0]].sector->floorpic;
-	    plat->high = sec->floorheight + amount*FRACUNIT;
-	    plat->wait = 0;
-	    plat->status = up;
+		case DPlat::platDownWaitUpStay:
+		case DPlat::platDownWaitUpStayStone:
+			newheight = sec->FindLowestFloorSurrounding (&spot) + lip*FRACUNIT;
+			plat->m_Low = sec->floorplane.PointToDist (spot, newheight);
 
-	    S_StartSound( &sec->soundorg,sfx_stnmov);
-	    break;
-	    
-	  case downWaitUpStay:
-	    plat->speed = PLATSPEED * 4;
-	    plat->low = P_FindLowestFloorSurrounding(sec);
+			if (plat->m_Low < sec->floorplane.d)
+				plat->m_Low = sec->floorplane.d;
 
-	    if (plat->low > sec->floorheight)
-		plat->low = sec->floorheight;
+			plat->m_High = sec->floorplane.d;
+			plat->m_Status = DPlat::down;
+			plat->PlayPlatSound (type == DPlat::platDownWaitUpStay ? "Platform" : "Floor");
+			break;
+		
+		case DPlat::platUpNearestWaitDownStay:
+			newheight = sec->FindNextHighestFloor (&spot);
+			// Intentional fall-through
 
-	    plat->high = sec->floorheight;
-	    plat->wait = TICRATE*PLATWAIT;
-	    plat->status = down;
-	    S_StartSound( &sec->soundorg,sfx_pstart);
-	    break;
-	    
-	  case blazeDWUS:
-	    plat->speed = PLATSPEED * 8;
-	    plat->low = P_FindLowestFloorSurrounding(sec);
+		case DPlat::platUpWaitDownStay:
+			if (type == DPlat::platUpWaitDownStay)
+			{
+				newheight = sec->FindHighestFloorSurrounding (&spot);
+			}
+			plat->m_High = sec->floorplane.PointToDist (spot, newheight);
+			plat->m_Low = sec->floorplane.d;
 
-	    if (plat->low > sec->floorheight)
-		plat->low = sec->floorheight;
+			if (plat->m_High > sec->floorplane.d)
+				plat->m_High = sec->floorplane.d;
 
-	    plat->high = sec->floorheight;
-	    plat->wait = TICRATE*PLATWAIT;
-	    plat->status = down;
-	    S_StartSound( &sec->soundorg,sfx_pstart);
-	    break;
-	    
-	  case perpetualRaise:
-	    plat->speed = PLATSPEED;
-	    plat->low = P_FindLowestFloorSurrounding(sec);
+			plat->m_Status = DPlat::up;
+			plat->PlayPlatSound ("Platform");
+			break;
 
-	    if (plat->low > sec->floorheight)
-		plat->low = sec->floorheight;
+		case DPlat::platPerpetualRaise:
+			newheight = sec->FindLowestFloorSurrounding (&spot) + lip*FRACUNIT;
+			plat->m_Low =  sec->floorplane.PointToDist (spot, newheight);
 
-	    plat->high = P_FindHighestFloorSurrounding(sec);
+			if (plat->m_Low < sec->floorplane.d)
+				plat->m_Low = sec->floorplane.d;
 
-	    if (plat->high < sec->floorheight)
-		plat->high = sec->floorheight;
+			newheight = sec->FindHighestFloorSurrounding (&spot);
+			plat->m_High =  sec->floorplane.PointToDist (spot, newheight);
 
-	    plat->wait = TICRATE*PLATWAIT;
-	    plat->status = (plat_e)(P_Random()&1);
+			if (plat->m_High > sec->floorplane.d)
+				plat->m_High = sec->floorplane.d;
 
-	    S_StartSound( &sec->soundorg,sfx_pstart);
-	    break;
+			plat->m_Status = pr_doplat() & 1 ? DPlat::up : DPlat::down;
+
+			plat->PlayPlatSound ("Platform");
+			break;
+
+		case DPlat::platToggle:	//jff 3/14/98 add new type to support instant toggle
+			plat->m_Crush = 10;	//jff 3/14/98 crush anything in the way
+
+			// set up toggling between ceiling, floor inclusive
+			newheight = sec->FindLowestCeilingPoint (&spot);
+			plat->m_Low = sec->floorplane.PointToDist (spot, newheight);
+			plat->m_High = sec->floorplane.d;
+			plat->m_Status = DPlat::down;
+			SN_StartSequence (sec, CHAN_FLOOR, "Silence", 0);
+			break;
+
+		case DPlat::platDownToNearestFloor:
+			newheight = sec->FindNextLowestFloor (&spot) + lip*FRACUNIT;
+			plat->m_Low = sec->floorplane.PointToDist (spot, newheight);
+			plat->m_Status = DPlat::down;
+			plat->m_High = sec->floorplane.d;
+			plat->PlayPlatSound ("Platform");
+			break;
+
+		case DPlat::platDownToLowestCeiling:
+			newheight = sec->FindLowestCeilingSurrounding (&spot);
+		    plat->m_Low = sec->floorplane.PointToDist (spot, newheight);
+			plat->m_High = sec->floorplane.d;
+
+			if (plat->m_Low < sec->floorplane.d)
+				plat->m_Low = sec->floorplane.d;
+
+			plat->m_Status = DPlat::down;
+			plat->PlayPlatSound ("Platform");
+			break;
+
+		default:
+			break;
+		}
 	}
-	P_AddActivePlat(plat);
-    }
-    return rtn;
+	return rtn;
 }
 
-
-
-void P_ActivateInStasis(int tag)
+void DPlat::Reactivate ()
 {
-    int		i;
-	
-    for (i = 0;i < MAXPLATS;i++)
-	if (::g->activeplats[i]
-	    && (::g->activeplats[i])->tag == tag
-	    && (::g->activeplats[i])->status == in_stasis)
+	if (m_Type == platToggle)	//jff 3/14/98 reactivate toggle type
+		m_Status = m_OldStatus == up ? down : up;
+	else
+		m_Status = m_OldStatus;
+}
+
+void P_ActivateInStasis (int tag)
+{
+	DPlat *scan;
+	TThinkerIterator<DPlat> iterator;
+
+	while ( (scan = iterator.Next ()) )
 	{
-	    (::g->activeplats[i])->status = (::g->activeplats[i])->oldstatus;
-	    (::g->activeplats[i])->thinker.function.acp1
-	      = (actionf_p1) T_PlatRaise;
+		if (scan->m_Tag == tag && scan->m_Status == DPlat::in_stasis)
+			scan->Reactivate ();
 	}
 }
 
-void EV_StopPlat(line_t* line)
+void DPlat::Stop ()
 {
-    int		j;
-	
-    for (j = 0;j < MAXPLATS;j++)
-	if (::g->activeplats[j]
-	    && ((::g->activeplats[j])->status != in_stasis)
-	    && ((::g->activeplats[j])->tag == line->tag))
-	{
-	    (::g->activeplats[j])->oldstatus = (::g->activeplats[j])->status;
-	    (::g->activeplats[j])->status = in_stasis;
-	    (::g->activeplats[j])->thinker.function.acv = (actionf_v)NULL;
-	}
+	m_OldStatus = m_Status;
+	m_Status = in_stasis;
 }
 
-void P_AddActivePlat(plat_t* plat)
+void EV_StopPlat (int tag)
 {
-    int		i;
-    
-    for (i = 0;i < MAXPLATS;i++)
-	if (::g->activeplats[i] == NULL)
-	{
-	    ::g->activeplats[i] = plat;
-	    return;
-	}
-    I_Error ("P_AddActivePlat: no more plats!");
-}
+	DPlat *scan;
+	TThinkerIterator<DPlat> iterator;
 
-void P_RemoveActivePlat(plat_t* plat)
-{
-    int		i;
-    for (i = 0;i < MAXPLATS;i++)
-	if (plat == ::g->activeplats[i])
+	while ( (scan = iterator.Next ()) )
 	{
-	    (::g->activeplats[i])->sector->specialdata = NULL;
-	    P_RemoveThinker(&(::g->activeplats[i])->thinker);
-	    ::g->activeplats[i] = NULL;
-	    
-	    return;
+		if (scan->m_Status != DPlat::in_stasis && scan->m_Tag == tag)
+			scan->Stop ();
 	}
-    I_Error ("P_RemoveActivePlat: can't find plat!");
 }
 

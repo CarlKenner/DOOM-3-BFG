@@ -1,643 +1,639 @@
 /*
 
-TiMidity -- Experimental MIDI to WAVE converter
-Copyright (C) 1995 Tuukka Toivonen <toivonen@clinet.fi>
+	TiMidity -- Experimental MIDI to WAVE converter
+	Copyright (C) 1995 Tuukka Toivonen <toivonen@clinet.fi>
 
-This program is free software; you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation; either version 2 of the License, or
-(at your option) any later version.
+	This library is free software; you can redistribute it and/or
+	modify it under the terms of the GNU Lesser General Public
+	License as published by the Free Software Foundation; either
+	version 2.1 of the License, or (at your option) any later version.
 
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
+	This library is distributed in the hope that it will be useful,
+	but WITHOUT ANY WARRANTY; without even the implied warranty of
+	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+	Lesser General Public License for more details.
 
-You should have received a copy of the GNU General Public License
-along with this program; if not, write to the Free Software
-Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+	You should have received a copy of the GNU Lesser General Public
+	License along with this library; if not, write to the Free Software
+	Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 
-instrum.c 
+	instrum.c 
 
-Code to load and unload GUS-compatible instrument patches.
+	Code to load and unload GUS-compatible instrument patches.
 
 */
-
-#include "precompiled.h"
 
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
-#include <ctype.h>
+#include <math.h>
 
-#include "config.h"
-#include "common.h"
-#include "instrum.h"
-#include "playmidi.h"
-#include "output.h"
-#include "controls.h"
-#include "resample.h"
-#include "tables.h"
-#include "filter.h"
+#include "timidity.h"
+#include "m_swap.h"
+#include "files.h"
+#include "templates.h"
+#include "gf1patch.h"
 
+namespace Timidity
+{
 
+extern Instrument *load_instrument_dls(Renderer *song, int drum, int bank, int instrument);
 
-//void Real_Tim_Free( void *pt );
+Instrument::Instrument()
+: samples(0), sample(NULL)
+{
+}
 
-/* Some functions get aggravated if not even the standard banks are 
-available. */
-static ToneBank standard_tonebank, standard_drumset;
-ToneBank 
-*tonebank[128]={&standard_tonebank},
-*drumset[128]={&standard_drumset};
-
-/* This is a special instrument, used for all melodic programs */
-Instrument *default_instrument=0;
-
-/* This is only used for tracks that don't specify a program */
-int default_program=DEFAULT_PROGRAM;
-
-int antialiasing_allowed=0;
-#ifdef FAST_DECAY
-int fast_decay=1;
-#else
-int fast_decay=0;
-#endif
-
-static void free_instrument(Instrument *ip)
+Instrument::~Instrument()
 {
 	Sample *sp;
 	int i;
-	if (!ip) return;
-	for (i=0; i<ip->samples; i++)
+
+	for (i = samples, sp = &(sample[0]); i != 0; i--, sp++)
 	{
-		sp=&(ip->sample[i]);
-		Real_Tim_Free(sp->data);
+		if (sp->type == INST_GUS && sp->data != NULL)
+		{
+			free(sp->data);
+		}
 	}
-	Real_Tim_Free(ip->sample);
-	Real_Tim_Free(ip);
+	free(sample);
 }
 
-static void free_bank(int dr, int b)
+ToneBank::ToneBank()
 {
-	int i;
-	ToneBank *bank=((dr) ? drumset[b] : tonebank[b]);
-	for (i=0; i<128; i++) {
-		if (bank->tone[i].instrument)
-		{
-			/* Not that this could ever happen, of course */
-			if (bank->tone[i].instrument != MAGIC_LOAD_INSTRUMENT)
-				free_instrument(bank->tone[i].instrument);
-			bank->tone[i].instrument=0;
-		}
-		if (bank->tone[i].name)
-		{
-			Real_Tim_Free( bank->tone[i].name );
-			bank->tone[i].name = NULL;
-		}
+	tone = new ToneBankElement[128];;
+	for (int i = 0; i < MAXPROG; ++i)
+	{
+		instrument[i] = 0;
 	}
 }
 
-static  int32_t convert_envelope_rate(uint8_t rate)
+ToneBank::~ToneBank()
 {
-	 int32_t r;
-
-	r=3-((rate>>6) & 0x3);
-	r*=3;
-	r = (int32_t)(rate & 0x3f) << r; /* 6.9 fixed point */
-
-	/* 15.15 fixed point. */
-	return (((r * 44100) / play_mode->rate) * control_ratio) 
-		<< ((fast_decay) ? 10 : 9);
+	delete[] tone;
+	for (int i = 0; i < MAXPROG; i++)
+	{
+		if (instrument[i] != NULL && instrument[i] != MAGIC_LOAD_INSTRUMENT)
+		{
+			delete instrument[i];
+			instrument[i] = NULL;
+		}
+	}
 }
 
-static  int32_t  convert_envelope_offset(uint8_t offset)
+int convert_tremolo_sweep(Renderer *song, BYTE sweep)
 {
-	/* This is not too good... Can anyone tell me what these values mean?
-	Are they GUS-style "exponential" volumes? And what does that mean? */
-
-	/* 15.15 fixed point */
-	return offset << (7+15);
-}
-
-static  int32_t convert_tremolo_sweep(uint8_t sweep)
-{
-	if (!sweep)
+	if (sweep == 0)
 		return 0;
 
 	return
-		((control_ratio * SWEEP_TUNING) << SWEEP_SHIFT) /
-		(play_mode->rate * sweep);
+		int(((song->control_ratio * SWEEP_TUNING) << SWEEP_SHIFT) / (song->rate * sweep));
 }
 
-static  int32_t convert_vibrato_sweep(uint8_t sweep,  int32_t vib_control_ratio)
+int convert_vibrato_sweep(Renderer *song, BYTE sweep, int vib_control_ratio)
 {
-	if (!sweep)
+	if (sweep == 0)
 		return 0;
 
 	return
-		(int32_t) (FSCALE((double) (vib_control_ratio) * SWEEP_TUNING, SWEEP_SHIFT)
-		/ (double)(play_mode->rate * sweep));
+		(int) (FSCALE((double) (vib_control_ratio) * SWEEP_TUNING, SWEEP_SHIFT) / (song->rate * sweep));
 
 	/* this was overflowing with seashore.pat
 
-	((vib_control_ratio * SWEEP_TUNING) << SWEEP_SHIFT) /
-	(play_mode->rate * sweep); */
+	((vib_control_ratio * SWEEP_TUNING) << SWEEP_SHIFT) / (song->rate * sweep);
+	*/
 }
 
-static  int32_t convert_tremolo_rate(uint8_t rate)
+int convert_tremolo_rate(Renderer *song, BYTE rate)
 {
 	return
-		((SINE_CYCLE_LENGTH * control_ratio * rate) << RATE_SHIFT) /
-		(TREMOLO_RATE_TUNING * play_mode->rate);
+		int(((song->control_ratio * rate) << RATE_SHIFT) / (TREMOLO_RATE_TUNING * song->rate));
 }
 
-static  int32_t convert_vibrato_rate(uint8_t rate)
+int convert_vibrato_rate(Renderer *song, BYTE rate)
 {
 	/* Return a suitable vibrato_control_ratio value */
 	return
-		(VIBRATO_RATE_TUNING * play_mode->rate) / 
-		(rate * 2 * VIBRATO_SAMPLE_INCREMENTS);
+		int((VIBRATO_RATE_TUNING * song->rate) / (rate * 2 * VIBRATO_SAMPLE_INCREMENTS));
 }
 
-static void reverse_data(int16_t *sp,  int32_t ls,  int32_t le)
+static void reverse_data(sample_t *sp, int ls, int le)
 {
-	int16_t s, *ep=sp+le;
-	sp+=ls;
-	le-=ls;
-	le/=2;
+	sample_t s, *ep = sp + le;
+	sp += ls;
+	le -= ls;
+	le /= 2;
 	while (le--)
 	{
-		s=*sp;
-		*sp++=*ep;
-		*ep--=s;
+		    s = *sp;
+		*sp++ = *ep;
+		*ep-- = s;
 	}
 }
 
 /* 
-If panning or note_to_use != -1, it will be used for all samples,
-instead of the sample-specific values in the instrument file. 
+	If panning or note_to_use != -1, it will be used for all samples,
+	instead of the sample-specific values in the instrument file. 
 
-For note_to_use, any value <0 or >127 will be forced to 0.
+	For note_to_use, any value <0 or >127 will be forced to 0.
 
-For other parameters, 1 means yes, 0 means no, other values are
-undefined.
+	For other parameters, 1 means yes, 0 means no, other values are
+	undefined.
 
-TODO: do reverse loops right */
-static Instrument *load_instrument(char *name, int percussion,
-								   int panning, int amp, int note_to_use,
-								   int strip_loop, int strip_envelope,
-								   int strip_tail)
+	TODO: do reverse loops right */
+static Instrument *load_instrument(Renderer *song, const char *name, int percussion,
+					int panning, int note_to_use,
+					int strip_loop, int strip_envelope,
+					int strip_tail)
 {
 	Instrument *ip;
 	Sample *sp;
-	idFile * fp;
-	uint8_t tmp[1024];
-	int i,j,noluck=0;
-	const char *path;
-	char filename[1024];
-#ifdef PATCH_EXT_LIST
-	static const char *patch_ext[] = PATCH_EXT_LIST;
-#endif
+	FileReader *fp;
+	GF1PatchHeader header;
+	GF1InstrumentData idata;
+	GF1LayerData layer_data;
+	GF1PatchData patch_data;
+	int i, j;
+	bool noluck = false;
 
 	if (!name) return 0;
 
-	path = "classicmusic/instruments/";
-
-	idStr instName = name;
-	instName.ToUpper();
-
-	strcpy( filename, path );
-	strcat( filename, instName.c_str() );
-	strcat( filename, ".PAT" );
-
 	/* Open patch file */
-	if ((fp=open_file(filename, 1, OF_VERBOSE)) == NULL)
+	if ((fp = pathExpander.openFileReader(name, NULL)) == NULL)
 	{
-		noluck=1;
-#ifdef PATCH_EXT_LIST
 		/* Try with various extensions */
-		for (i=0; patch_ext[i]; i++)
+		FString tmp = name;
+		tmp += ".pat";
+		if ((fp = pathExpander.openFileReader(tmp, NULL)) == NULL)
 		{
-			if (strlen(name)+strlen(patch_ext[i])<1024)
+#ifdef __unix__			// Windows isn't case-sensitive.
+			tmp.ToUpper();
+			if ((fp = pathExpander.openFileReader(tmp, NULL)) == NULL)
+#endif
 			{
-				strcpy(filename, path);
-				strcat(filename, name);
-				strcat(filename, patch_ext[i]);
-				if ((fp=open_file(filename, 1, OF_VERBOSE)) != NULL)
-				{
-					noluck=0;
-					break;
-				}
+				noluck = true;
 			}
 		}
-#endif
 	}
 
 	if (noluck)
 	{
-		ctl->cmsg(CMSG_ERROR, VERB_NORMAL, 
-			"Instrument `%s' can't be found.", name);
+		cmsg(CMSG_ERROR, VERB_NORMAL, "Instrument `%s' can't be found.\n", name);
 		return 0;
 	}
 
-	ctl->cmsg(CMSG_INFO, VERB_NOISY, "Loading instrument %s", current_filename);
+	cmsg(CMSG_INFO, VERB_NOISY, "Loading instrument %s\n", name);
 
-	/* Read some headers and do cursory sanity checks. There are loads
-	of magic offsets. This could be rewritten... */
+	/* Read some headers and do cursory sanity checks. */
 
-	if ((239 != fp->Read(tmp, 239)) ||
-		(memcmp(tmp, "GF1PATCH110\0ID#000002", 22) &&
-		memcmp(tmp, "GF1PATCH100\0ID#000002", 22))) /* don't know what the
-													differences are */
+	if (sizeof(header) != fp->Read(&header, sizeof(header)))
 	{
-		ctl->cmsg(CMSG_ERROR, VERB_NORMAL, "%s: not an instrument", name);
+failread:
+		cmsg(CMSG_ERROR, VERB_NORMAL, "%s: Error reading instrument.\n", name);
+		delete fp;
+		return 0;
+	}
+	if (strncmp(header.Header, GF1_HEADER_TEXT, HEADER_SIZE - 4) != 0)
+	{
+		cmsg(CMSG_ERROR, VERB_NORMAL, "%s: Not an instrument.\n", name);
+		delete fp;
+		return 0;
+	}
+	if (strcmp(header.Header + 8, "110") < 0)
+	{
+		cmsg(CMSG_ERROR, VERB_NORMAL, "%s: Is an old and unsupported patch version.\n", name);
+		delete fp;
+		return 0;
+	}
+	if (sizeof(idata) != fp->Read(&idata, sizeof(idata)))
+	{
+		goto failread;
+	}
+
+	header.WaveForms = LittleShort(header.WaveForms);
+	header.MasterVolume = LittleShort(header.MasterVolume);
+	header.DataSize = LittleLong(header.DataSize);
+	idata.Instrument = LittleShort(idata.Instrument);
+
+	if (header.Instruments != 1 && header.Instruments != 0) /* instruments. To some patch makers, 0 means 1 */
+	{
+		cmsg(CMSG_ERROR, VERB_NORMAL, "Can't handle patches with %d instruments.\n", header.Instruments);
+		delete fp;
 		return 0;
 	}
 
-	if (tmp[82] != 1 && tmp[82] != 0) /* instruments. To some patch makers, 
-									  0 means 1 */
+	if (idata.Layers != 1 && idata.Layers != 0) /* layers. What's a layer? */
 	{
-		ctl->cmsg(CMSG_ERROR, VERB_NORMAL, 
-			"Can't handle patches with %d instruments", tmp[82]);
+		cmsg(CMSG_ERROR, VERB_NORMAL, "Can't handle instruments with %d layers.\n", idata.Layers);
+		delete fp;
 		return 0;
 	}
 
-	if (tmp[151] != 1 && tmp[151] != 0) /* layers. What's a layer? */
+	if (sizeof(layer_data) != fp->Read(&layer_data, sizeof(layer_data)))
 	{
-		ctl->cmsg(CMSG_ERROR, VERB_NORMAL, 
-			"Can't handle instruments with %d layers", tmp[151]);
+		goto failread;
+	}
+
+	if (layer_data.Samples == 0)
+	{
+		cmsg(CMSG_ERROR, VERB_NORMAL, "Instrument has 0 samples.\n");
+		delete fp;
 		return 0;
 	}
 
-	ip=(Instrument *)safe_malloc(sizeof(Instrument));
-	ip->samples = tmp[198];
-	ip->sample = (Sample *)safe_malloc(sizeof(Sample) * ip->samples);
-	for (i=0; i<ip->samples; i++)
+	ip = new Instrument;
+	ip->samples = layer_data.Samples;
+	ip->sample = (Sample *)safe_malloc(sizeof(Sample) * layer_data.Samples);
+	memset(ip->sample, 0, sizeof(Sample) * layer_data.Samples);
+	for (i = 0; i < layer_data.Samples; ++i)
 	{
-
-		uint8_t fractions;
-		 int32_t tmplong;
-		uint16_t tmpshort;
-		uint8_t tmpchar;
-
-#define READ_CHAR(thing) \
-	if (1 != fp->Read(&tmpchar, 1)) goto fail; \
-	thing = tmpchar;
-#define READ_SHORT(thing) \
-	if (2 != fp->Read(&tmpshort, 2 )) goto fail; \
-	thing = LE_SHORT(tmpshort);
-#define READ_LONG(thing) \
-	if (4 != fp->Read(&tmplong, 4 )) goto fail; \
-	thing = LE_LONG(tmplong);
-
-		skip(fp, 7); /* Skip the wave name */
-
-		if (1 != fp->Read(&fractions, 1 ))
+		if (sizeof(patch_data) != fp->Read(&patch_data, sizeof(patch_data)))
 		{
 fail:
-			ctl->cmsg(CMSG_ERROR, VERB_NORMAL, "Error reading sample %d", i);
-			for (j=0; j<i; j++)
-				Real_Tim_Free(ip->sample[j].data);
-			Real_Tim_Free(ip->sample);
-			Real_Tim_Free(ip);
+			cmsg(CMSG_ERROR, VERB_NORMAL, "Error reading sample %d.\n", i);
+			delete ip;
+			delete fp;
 			return 0;
 		}
 
-		sp=&(ip->sample[i]);
+		sp = &(ip->sample[i]);
 
-		READ_LONG(sp->data_length);
-		READ_LONG(sp->loop_start);
-		READ_LONG(sp->loop_end);
-		READ_SHORT(sp->sample_rate);
-		READ_LONG(sp->low_freq);
-		READ_LONG(sp->high_freq);
-		READ_LONG(sp->root_freq);
-		skip(fp, 2); /* Why have a "root frequency" and then "tuning"?? */
+		sp->data_length = LittleLong(patch_data.WaveSize);
+		sp->loop_start = LittleLong(patch_data.StartLoop);
+		sp->loop_end = LittleLong(patch_data.EndLoop);
+		sp->sample_rate = LittleShort(patch_data.SampleRate);
+		sp->low_freq = float(LittleLong(patch_data.LowFrequency));
+		sp->high_freq = float(LittleLong(patch_data.HighFrequency)) + 0.9999f;
+		sp->root_freq = float(LittleLong(patch_data.RootFrequency));
+		sp->high_vel = 127;
+		sp->velocity = -1;
+		sp->type = INST_GUS;
 
-		READ_CHAR(tmp[0]);
-
-		if (panning==-1)
-			sp->panning = (tmp[0] * 8 + 4) & 0x7f;
-		else
-			sp->panning=(uint8)(panning & 0x7F);
-
-		/* envelope, tremolo, and vibrato */
-		if (18 != fp->Read(tmp, 18)) goto fail; 
-
-		if (!tmp[13] || !tmp[14])
+		// Expand to SF2 range.
+		if (panning == -1)
 		{
-			sp->tremolo_sweep_increment=
-				sp->tremolo_phase_increment=sp->tremolo_depth=0;
-			ctl->cmsg(CMSG_INFO, VERB_DEBUG, " * no tremolo");
+			sp->panning = (patch_data.Balance & 0x0F) * 1000 / 15 - 500;
 		}
 		else
 		{
-			sp->tremolo_sweep_increment=convert_tremolo_sweep(tmp[12]);
-			sp->tremolo_phase_increment=convert_tremolo_rate(tmp[13]);
-			sp->tremolo_depth=tmp[14];
-			ctl->cmsg(CMSG_INFO, VERB_DEBUG,
-				" * tremolo: sweep %d, phase %d, depth %d",
-				sp->tremolo_sweep_increment, sp->tremolo_phase_increment,
-				sp->tremolo_depth);
+			sp->panning = (panning & 0x7f) * 1000 / 127 - 500;
 		}
+		song->compute_pan((sp->panning + 500) / 1000.0, INST_GUS, sp->left_offset, sp->right_offset);
 
-		if (!tmp[16] || !tmp[17])
+		/* tremolo */
+		if (patch_data.TremoloRate == 0 || patch_data.TremoloDepth == 0)
 		{
-			sp->vibrato_sweep_increment=
-				sp->vibrato_control_ratio=sp->vibrato_depth=0;
-			ctl->cmsg(CMSG_INFO, VERB_DEBUG, " * no vibrato");
+			sp->tremolo_sweep_increment = 0;
+			sp->tremolo_phase_increment = 0;
+			sp->tremolo_depth = 0;
+			cmsg(CMSG_INFO, VERB_DEBUG, " * no tremolo\n");
 		}
 		else
 		{
-			sp->vibrato_control_ratio=convert_vibrato_rate(tmp[16]);
-			sp->vibrato_sweep_increment=
-				convert_vibrato_sweep(tmp[15], sp->vibrato_control_ratio);
-			sp->vibrato_depth=tmp[17];
-			ctl->cmsg(CMSG_INFO, VERB_DEBUG,
-				" * vibrato: sweep %d, ctl %d, depth %d",
-				sp->vibrato_sweep_increment, sp->vibrato_control_ratio,
-				sp->vibrato_depth);
-
+			sp->tremolo_sweep_increment = convert_tremolo_sweep(song, patch_data.TremoloSweep);
+			sp->tremolo_phase_increment = convert_tremolo_rate(song, patch_data.TremoloRate);
+			sp->tremolo_depth = patch_data.TremoloDepth;
+			cmsg(CMSG_INFO, VERB_DEBUG, " * tremolo: sweep %d, phase %d, depth %d\n",
+				sp->tremolo_sweep_increment, sp->tremolo_phase_increment, sp->tremolo_depth);
 		}
 
-		READ_CHAR(sp->modes);
+		/* vibrato */
+		if (patch_data.VibratoRate == 0 || patch_data.VibratoDepth == 0)
+		{
+			sp->vibrato_sweep_increment = 0;
+			sp->vibrato_control_ratio = 0;
+			sp->vibrato_depth = 0;
+			cmsg(CMSG_INFO, VERB_DEBUG, " * no vibrato\n");
+		}
+		else
+		{
+			sp->vibrato_control_ratio = convert_vibrato_rate(song, patch_data.VibratoRate);
+			sp->vibrato_sweep_increment = convert_vibrato_sweep(song, patch_data.VibratoSweep, sp->vibrato_control_ratio);
+			sp->vibrato_depth = patch_data.VibratoDepth;
+			cmsg(CMSG_INFO, VERB_DEBUG, " * vibrato: sweep %d, ctl %d, depth %d\n",
+				sp->vibrato_sweep_increment, sp->vibrato_control_ratio, sp->vibrato_depth);
+		}
 
-		skip(fp, 40); /* skip the useless scale frequency, scale factor
-					  (what's it mean?), and reserved space */
+		sp->modes = patch_data.Modes;
 
 		/* Mark this as a fixed-pitch instrument if such a deed is desired. */
-		if (note_to_use!=-1)
-			sp->note_to_use=(uint8)(note_to_use);
+		if (note_to_use != -1)
+		{
+			sp->scale_note = note_to_use;
+			sp->scale_factor = 0;
+		}
 		else
-			sp->note_to_use=0;
+		{
+			sp->scale_note = LittleShort(patch_data.ScaleFrequency);
+			sp->scale_factor = LittleShort(patch_data.ScaleFactor);
+			if (sp->scale_factor <= 2)
+			{
+				sp->scale_factor *= 1024;
+			}
+			else if (sp->scale_factor > 2048)
+			{
+				sp->scale_factor = 1024;
+			}
+			if (sp->scale_factor != 1024)
+			{
+				cmsg(CMSG_INFO, VERB_DEBUG, " * Scale: note %d, factor %d\n",
+					sp->scale_note, sp->scale_factor);
+			}
+		}
 
+#if 0
 		/* seashore.pat in the Midia patch set has no Sustain. I don't
-		understand why, and fixing it by adding the Sustain flag to
-		all looped patches probably breaks something else. We do it
-		anyway. */
+		   understand why, and fixing it by adding the Sustain flag to
+		   all looped patches probably breaks something else. We do it
+		   anyway. */
 
-		if (sp->modes & MODES_LOOPING) 
-			sp->modes |= MODES_SUSTAIN;
-
+		if (sp->modes & PATCH_LOOPEN) 
+		{
+			sp->modes |= PATCH_SUSTAIN;
+		}
+#endif
+		/* [RH] Alas, eawpats has percussion instruments with bad envelopes. :(
+		 * (See cymchina.pat for one example of this sadness.)
+		 * Do this logic for instruments without a description, only. Hopefully that
+		 * catches all the patches that need it without including any extra.
+		 */
+		for (j = 0; j < DESC_SIZE; ++j)
+		{
+			if (header.Description[j] != 0)
+				break;
+		}
 		/* Strip any loops and envelopes we're permitted to */
-		if ((strip_loop==1) && 
-			(sp->modes & (MODES_SUSTAIN | MODES_LOOPING | 
-			MODES_PINGPONG | MODES_REVERSE)))
+		/* [RH] (But PATCH_BACKWARD isn't a loop flag at all!) */
+		if ((strip_loop == 1) && 
+			(sp->modes & (PATCH_SUSTAIN | PATCH_LOOPEN | PATCH_BIDIR | PATCH_BACKWARD)))
 		{
-			ctl->cmsg(CMSG_INFO, VERB_DEBUG, " - Removing loop and/or sustain");
-			sp->modes &=~(MODES_SUSTAIN | MODES_LOOPING | 
-				MODES_PINGPONG | MODES_REVERSE);
-		}
-
-		if (strip_envelope==1)
-		{
-			if (sp->modes & MODES_ENVELOPE)
-				ctl->cmsg(CMSG_INFO, VERB_DEBUG, " - Removing envelope");
-			sp->modes &= ~MODES_ENVELOPE;
-		}
-		else if (strip_envelope != 0)
-		{
-			/* Have to make a guess. */
-			if (!(sp->modes & (MODES_LOOPING | MODES_PINGPONG | MODES_REVERSE)))
+			cmsg(CMSG_INFO, VERB_DEBUG, " - Removing loop and/or sustain\n");
+			if (j == DESC_SIZE)
 			{
-				/* No loop? Then what's there to sustain? No envelope needed
-				either... */
-				sp->modes &= ~(MODES_SUSTAIN|MODES_ENVELOPE);
-				ctl->cmsg(CMSG_INFO, VERB_DEBUG, 
-					" - No loop, removing sustain and envelope");
-			}
-			else if (!memcmp(tmp, "??????", 6) || tmp[11] >= 100) 
-			{
-				/* Envelope rates all maxed out? Envelope end at a high "offset"?
-				That's a weird envelope. Take it out. */
-				sp->modes &= ~MODES_ENVELOPE;
-				ctl->cmsg(CMSG_INFO, VERB_DEBUG, 
-					" - Weirdness, removing envelope");
-			}
-			else if (!(sp->modes & MODES_SUSTAIN))
-			{
-				/* No sustain? Then no envelope.  I don't know if this is
-				justified, but patches without sustain usually don't need the
-				envelope either... at least the Gravis ones. They're mostly
-				drums.  I think. */
-				sp->modes &= ~MODES_ENVELOPE;
-				ctl->cmsg(CMSG_INFO, VERB_DEBUG, 
-					" - No sustain, removing envelope");
+				sp->modes &= ~(PATCH_SUSTAIN | PATCH_LOOPEN | PATCH_BIDIR | PATCH_BACKWARD);
 			}
 		}
 
-		for (j=0; j<6; j++)
+		if (strip_envelope == 1)
 		{
-			sp->envelope_rate[j]=
-				convert_envelope_rate(tmp[j]);
-			sp->envelope_offset[j]= 
-				convert_envelope_offset(tmp[6+j]);
+			cmsg(CMSG_INFO, VERB_DEBUG, " - Removing envelope\n");
+			/* [RH] The envelope isn't really removed, but this is the way the standard
+			 * Gravis patches get that effect: All rates at maximum, and all offsets at
+			 * a constant level.
+			 */
+			if (j == DESC_SIZE)
+			{
+				int k;
+				for (k = 1; k < ENVELOPES; ++k)
+				{ /* Find highest offset. */
+					if (patch_data.EnvelopeOffset[k] > patch_data.EnvelopeOffset[0])
+					{
+						patch_data.EnvelopeOffset[0] = patch_data.EnvelopeOffset[k];
+					}
+				}
+				for (k = 0; k < ENVELOPES; ++k)
+				{
+					patch_data.EnvelopeRate[k] = 63;
+					patch_data.EnvelopeOffset[k] = patch_data.EnvelopeOffset[0];
+				}
+			}
+		}
+
+		for (j = 0; j < 6; j++)
+		{
+			sp->envelope.gf1.rate[j] = patch_data.EnvelopeRate[j];
+			/* [RH] GF1NEW clamps the offsets to the range [5,251], so we do too. */
+			sp->envelope.gf1.offset[j] = clamp<BYTE>(patch_data.EnvelopeOffset[j], 5, 251);
 		}
 
 		/* Then read the sample data */
-		sp->data = (sample_t*)safe_malloc(sp->data_length);
-		if ( static_cast< size_t >( sp->data_length ) != fp->Read(sp->data, sp->data_length ))
+		if (((sp->modes & PATCH_16) && sp->data_length/2 > MAX_SAMPLE_SIZE) ||
+			(!(sp->modes & PATCH_16) && sp->data_length > MAX_SAMPLE_SIZE))
+		{
+			goto fail;
+		}
+		sp->data = (sample_t *)safe_malloc(sp->data_length);
+
+		if (sp->data_length != fp->Read(sp->data, sp->data_length))
 			goto fail;
 
-		if (!(sp->modes & MODES_16BIT)) /* convert to 16-bit data */
-		{
-			 int32_t i=sp->data_length;
-			uint8_t *cp=(uint8_t *)(sp->data);
-			uint16_t *tmp,*anew;
-			tmp=anew=(uint16*)safe_malloc(sp->data_length*2);
-			while (i--)
-				*tmp++ = (uint16)(*cp++) << 8;
-			cp=(uint8_t *)(sp->data);
-			sp->data = (sample_t *)anew;
-			Real_Tim_Free(cp);
-			sp->data_length *= 2;
-			sp->loop_start *= 2;
-			sp->loop_end *= 2;
-		}
-#ifndef LITTLE_ENDIAN
-		else
-			/* convert to machine byte order */
-		{
-			 int32_t i=sp->data_length/2;
-			int16_t *tmp=(int16_t *)sp->data,s;
-			while (i--)
-			{ 
-				s=LE_SHORT(*tmp);
-				*tmp++=s;
-			}
-		}
-#endif
-
-		if (sp->modes & MODES_UNSIGNED) /* convert to signed data */
-		{
-			 int32_t i=sp->data_length/2;
-			int16_t *tmp=(int16_t *)sp->data;
-			while (i--)
-				*tmp++ ^= 0x8000;
-		}
+		convert_sample_data(sp, sp->data);
 
 		/* Reverse reverse loops and pass them off as normal loops */
-		if (sp->modes & MODES_REVERSE)
+		if (sp->modes & PATCH_BACKWARD)
 		{
-			 int32_t t;
+			int t;
 			/* The GUS apparently plays reverse loops by reversing the
-			whole sample. We do the same because the GUS does not SUCK. */
+			   whole sample. We do the same because the GUS does not SUCK. */
 
-			ctl->cmsg(CMSG_WARNING, VERB_NORMAL, "Reverse loop in %s", name);
-			reverse_data((int16_t *)sp->data, 0, sp->data_length/2);
+			cmsg(CMSG_WARNING, VERB_NORMAL, "Reverse loop in %s\n", name);
+			reverse_data((sample_t *)sp->data, 0, sp->data_length);
+			sp->data[sp->data_length] = sp->data[sp->data_length - 1];
 
-			t=sp->loop_start;
-			sp->loop_start=sp->data_length - sp->loop_end;
-			sp->loop_end=sp->data_length - t;
+			t = sp->loop_start;
+			sp->loop_start = sp->data_length - sp->loop_end;
+			sp->loop_end = sp->data_length - t;
 
-			sp->modes &= ~MODES_REVERSE;
-			sp->modes |= MODES_LOOPING; /* just in case */
+			sp->modes &= ~PATCH_BACKWARD;
+			sp->modes |= PATCH_LOOPEN; /* just in case */
 		}
-
-		/* If necessary do some anti-aliasing filtering  */
-
-		if (antialiasing_allowed)
-			antialiasing(sp,play_mode->rate);
-
-#ifdef ADJUST_SAMPLE_VOLUMES
-		if (amp!=-1)
-			sp->volume=(float)((amp) / 100.0);
-		else
-		{
-			/* Try to determine a volume scaling factor for the sample.
-			This is a very crude adjustment, but things sound more
-			balanced with it. Still, this should be a runtime option. */
-			 int32_t i=sp->data_length/2;
-			int16_t maxamp=0,a;
-			int16_t *tmp=(int16_t *)sp->data;
-			while (i--)
-			{
-				a=*tmp++;
-				if (a<0) a=-a;
-				if (a>maxamp)
-					maxamp=a;
-			}
-			sp->volume=(float)(32768.0 / maxamp);
-			ctl->cmsg(CMSG_INFO, VERB_DEBUG, " * volume comp: %f", sp->volume);
-		}
-#else
-		if (amp!=-1)
-			sp->volume=(double)(amp) / 100.0;
-		else
-			sp->volume=1.0;
-#endif
-
-		sp->data_length /= 2; /* These are in bytes. Convert into samples. */
-		sp->loop_start /= 2;
-		sp->loop_end /= 2;
 
 		/* Then fractional samples */
 		sp->data_length <<= FRACTION_BITS;
 		sp->loop_start <<= FRACTION_BITS;
 		sp->loop_end <<= FRACTION_BITS;
 
-		/* Adjust for fractional loop points. This is a guess. Does anyone
-		know what "fractions" really stands for? */
-		sp->loop_start |=
-			(fractions & 0x0F) << (FRACTION_BITS-4);
-		sp->loop_end |=
-			((fractions>>4) & 0x0F) << (FRACTION_BITS-4);
+		/* Adjust for fractional loop points. */
+		sp->loop_start |= (patch_data.Fractions & 0x0F) << (FRACTION_BITS-4);
+		sp->loop_end   |= (patch_data.Fractions & 0xF0) << (FRACTION_BITS-4-4);
 
 		/* If this instrument will always be played on the same note,
-		and it's not looped, we can resample it now. */
-		if (sp->note_to_use && !(sp->modes & MODES_LOOPING))
-			pre_resample(sp);
-
-#ifdef LOOKUP_HACK
-		/* Squash the 16-bit data into 8 bits. */
+		   and it's not looped, we can resample it now. */
+		if (sp->scale_factor == 0 && !(sp->modes & PATCH_LOOPEN))
 		{
-			uint8_t *gulp,*ulp;
-			int16_t *swp;
-			int l=sp->data_length >> FRACTION_BITS;
-			gulp=ulp=safe_malloc(l+1);
-			swp=(int16_t *)sp->data;
-			while(l--)
-				*ulp++ = (*swp++ >> 8) & 0xFF;
-			Real_Tim_Free(sp->data);
-			sp->data=(sample_t *)gulp;
+			pre_resample(song, sp);
 		}
-#endif
 
-		if (strip_tail==1)
+		if (strip_tail == 1)
 		{
 			/* Let's not really, just say we did. */
-			ctl->cmsg(CMSG_INFO, VERB_DEBUG, " - Stripping tail");
+			cmsg(CMSG_INFO, VERB_DEBUG, " - Stripping tail\n");
 			sp->data_length = sp->loop_end;
 		}
 	}
-
 	delete fp;
-
 	return ip;
 }
 
-static int fill_bank(int dr, int b)
+void convert_sample_data(Sample *sp, const void *data)
 {
-	int i, errors=0;
-	ToneBank *bank=((dr) ? drumset[b] : tonebank[b]);
-	if (!bank)
+	/* convert everything to 32-bit floating point data */
+	sample_t *newdata = NULL;
+
+	switch (sp->modes & (PATCH_16 | PATCH_UNSIGNED))
 	{
-		ctl->cmsg(CMSG_ERROR, VERB_NORMAL, 
-			"Huh. Tried to load instruments in non-existent %s %d",
+	case 0:
+	  {					/* 8-bit, signed */
+		SBYTE *cp = (SBYTE *)data;
+		newdata = (sample_t *)safe_malloc((sp->data_length + 1) * sizeof(sample_t));
+		for (int i = 0; i < sp->data_length; ++i)
+		{
+			if (cp[i] < 0)
+			{
+				newdata[i] = float(cp[i]) / 128.f;
+			}
+			else
+			{
+				newdata[i] = float(cp[i]) / 127.f;
+			}
+		}
+		break;
+	  }
+
+	case PATCH_UNSIGNED:
+	  {					/* 8-bit, unsigned */
+		BYTE *cp = (BYTE *)data;
+		newdata = (sample_t *)safe_malloc((sp->data_length + 1) * sizeof(sample_t));
+		for (int i = 0; i < sp->data_length; ++i)
+		{
+			int c = cp[i] - 128;
+			if (c < 0)
+			{
+				newdata[i] = float(c) / 128.f;
+			}
+			else
+			{
+				newdata[i] = float(c) / 127.f;
+			}
+		}
+		break;
+	  }
+
+	case PATCH_16:
+	  {					/* 16-bit, signed */
+		SWORD *cp = (SWORD *)data;
+		/* Convert these to samples */
+		sp->data_length >>= 1;
+		sp->loop_start >>= 1;
+		sp->loop_end >>= 1;
+		newdata = (sample_t *)safe_malloc((sp->data_length + 1) * sizeof(sample_t));
+		for (int i = 0; i < sp->data_length; ++i)
+		{
+			int c = LittleShort(cp[i]);
+			if (c < 0)
+			{
+				newdata[i] = float(c) / 32768.f;
+			}
+			else
+			{
+				newdata[i] = float(c) / 32767.f;
+			}
+		}
+		break;
+	  }
+
+	case PATCH_16 | PATCH_UNSIGNED:
+	  {					/* 16-bit, unsigned */
+		WORD *cp = (WORD *)data;
+		/* Convert these to samples */
+		sp->data_length >>= 1;
+		sp->loop_start >>= 1;
+		sp->loop_end >>= 1;
+		newdata = (sample_t *)safe_malloc((sp->data_length + 1) * sizeof(sample_t));
+		for (int i = 0; i < sp->data_length; ++i)
+		{
+			int c = LittleShort(cp[i]) - 32768;
+			if (c < 0)
+			{
+				newdata[i] = float(c) / 32768.f;
+			}
+			else
+			{
+				newdata[i] = float(c) / 32767.f;
+			}
+		}
+		break;
+	  }
+	}
+	/* Duplicate the final sample for linear interpolation. */
+	newdata[sp->data_length] = newdata[sp->data_length - 1];
+	if (sp->data != NULL)
+	{
+		free(sp->data);
+	}
+	sp->data = newdata;
+}
+
+static int fill_bank(Renderer *song, int dr, int b)
+{
+	int i, errors = 0;
+	ToneBank *bank = ((dr) ? drumset[b] : tonebank[b]);
+	if (bank == NULL)
+	{
+		cmsg(CMSG_ERROR, VERB_NORMAL, 
+			"Huh. Tried to load instruments in non-existent %s %d\n",
 			(dr) ? "drumset" : "tone bank", b);
 		return 0;
 	}
-	for (i=0; i<128; i++)
+	for (i = 0; i < MAXPROG; i++)
 	{
-		if (bank->tone[i].instrument==MAGIC_LOAD_INSTRUMENT)
+		if (bank->instrument[i] == MAGIC_LOAD_INSTRUMENT)
 		{
-			if (!(bank->tone[i].name))
+			bank->instrument[i] = NULL;
+			bank->instrument[i] = load_instrument_dls(song, dr, b, i);
+			if (bank->instrument[i] != NULL)
 			{
-				ctl->cmsg(CMSG_WARNING, (b!=0) ? VERB_VERBOSE : VERB_NORMAL,
-					"No instrument mapped to %s %d, program %d%s",
-					(dr)? "drum set" : "tone bank", b, i, 
-					(b!=0) ? "" : " - this instrument will not be heard");
-				if (b!=0)
+				continue;
+			}
+			Instrument *ip;
+			ip = load_instrument_font_order(song, 0, dr, b, i);
+			if (ip == NULL)
+			{
+				if (bank->tone[i].fontbank >= 0)
+				{
+					ip = load_instrument_font(song, bank->tone[i].name, dr, b, i);
+				}
+				else
+				{
+					ip = load_instrument(song, bank->tone[i].name, 
+						(dr) ? 1 : 0,
+						bank->tone[i].pan,
+						(bank->tone[i].note != -1) ? bank->tone[i].note : ((dr) ? i : -1),
+						(bank->tone[i].strip_loop != -1) ? bank->tone[i].strip_loop : ((dr) ? 1 : -1),
+						(bank->tone[i].strip_envelope != -1) ? bank->tone[i].strip_envelope : ((dr) ? 1 : -1),
+						bank->tone[i].strip_tail);
+				}
+				if (ip == NULL)
+				{
+					ip = load_instrument_font_order(song, 1, dr, b, i);
+				}
+			}
+			bank->instrument[i] = ip;
+			if (ip == NULL)
+			{
+				if (bank->tone[i].name.IsEmpty())
+				{
+					cmsg(CMSG_WARNING, (b != 0) ? VERB_VERBOSE : VERB_NORMAL,
+						"No instrument mapped to %s %d, program %d%s\n",
+						(dr) ? "drum set" : "tone bank", b, i, 
+						(b != 0) ? "" : " - this instrument will not be heard");
+				}
+				else
+				{
+					cmsg(CMSG_ERROR, VERB_NORMAL, 
+						"Couldn't load instrument %s (%s %d, program %d)\n",
+						bank->tone[i].name.GetChars(),
+						(dr) ? "drum set" : "tone bank", b, i);
+				}
+				if (b != 0)
 				{
 					/* Mark the corresponding instrument in the default
-					bank / drumset for loading (if it isn't already) */
-					if (!dr)
+					   bank / drumset for loading (if it isn't already) */
+					if (((dr) ? drumset[0] : tonebank[0])->instrument[i] != NULL)
 					{
-						if (!(standard_tonebank.tone[i].instrument))
-							standard_tonebank.tone[i].instrument=
-							MAGIC_LOAD_INSTRUMENT;
-					}
-					else
-					{
-						if (!(standard_drumset.tone[i].instrument))
-							standard_drumset.tone[i].instrument=
-							MAGIC_LOAD_INSTRUMENT;
+						((dr) ? drumset[0] : tonebank[0])->instrument[i] = MAGIC_LOAD_INSTRUMENT;
 					}
 				}
-				bank->tone[i].instrument=0;
-				errors++;
-			}
-			else if (!(bank->tone[i].instrument=
-				load_instrument(bank->tone[i].name, 
-				(dr) ? 1 : 0,
-				bank->tone[i].pan,
-				bank->tone[i].amp,
-				(bank->tone[i].note!=-1) ? 
-				bank->tone[i].note :
-			((dr) ? i : -1),
-				(bank->tone[i].strip_loop!=-1) ?
-				bank->tone[i].strip_loop :
-			((dr) ? 1 : -1),
-				(bank->tone[i].strip_envelope != -1) ? 
-				bank->tone[i].strip_envelope :
-			((dr) ? 1 : -1),
-				bank->tone[i].strip_tail )))
-			{
-				ctl->cmsg(CMSG_ERROR, VERB_NORMAL, 
-					"Couldn't load instrument %s (%s %d, program %d)",
-					bank->tone[i].name,
-					(dr)? "drum set" : "tone bank", b, i);
 				errors++;
 			}
 		}
@@ -645,39 +641,51 @@ static int fill_bank(int dr, int b)
 	return errors;
 }
 
-int load_missing_instruments(void)
+int Renderer::load_missing_instruments()
 {
-	int i=128,errors=0;
+	int i = MAXBANK, errors = 0;
 	while (i--)
 	{
-		if (tonebank[i])
-			errors+=fill_bank(0,i);
-		if (drumset[i])
-			errors+=fill_bank(1,i);
+		if (tonebank[i] != NULL)
+			errors += fill_bank(this, 0,i);
+		if (drumset[i] != NULL)
+			errors += fill_bank(this, 1,i);
 	}
 	return errors;
 }
 
-void free_instruments(void)
+void free_instruments()
 {
-	int i=128;
-	while(i--)
+	int i = MAXBANK;
+	while (i--)
 	{
-		if (tonebank[i])
-			free_bank(0,i);
-		if (drumset[i])
-			free_bank(1,i);
+		if (tonebank[i] != NULL)
+		{
+			delete tonebank[i];
+			tonebank[i] = NULL;
+		}
+		if (drumset[i] != NULL)
+		{
+			delete drumset[i];
+			drumset[i] = NULL;
+		}
 	}
 }
 
-int set_default_instrument(char *name)
+int Renderer::set_default_instrument(const char *name)
 {
 	Instrument *ip;
-	if (!(ip=load_instrument(name, 0, -1, -1, -1, 0, 0, 0)))
+	if ((ip = load_instrument(this, name, 0, -1, -1, 0, 0, 0)) == NULL)
+	{
 		return -1;
-	if (default_instrument)
-		free_instrument(default_instrument);
-	default_instrument=ip;
-	default_program=SPECIAL_PROGRAM;
+	}
+	if (default_instrument != NULL)
+	{
+		delete default_instrument;
+	}
+	default_instrument = ip;
+	default_program = SPECIAL_PROGRAM;
 	return 0;
+}
+
 }

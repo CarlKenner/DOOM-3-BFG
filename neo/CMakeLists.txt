@@ -3,6 +3,17 @@ set(CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake)
 
 project(Doom3BFGVR)
 
+if( CMAKE_SIZEOF_VOID_P MATCHES "8" )
+	set( X64 64 )
+	set( X32_64 64 )
+	set( WIN32_WIN64 win64 )
+	set( WIN32_X64 x64 )
+else( CMAKE_SIZEOF_VOID_P MATCHES "8" )
+	set( X32_64 32 )
+	set( WIN32_WIN64 win32 )
+	set( WIN32_X64 win32 )
+endif( CMAKE_SIZEOF_VOID_P MATCHES "8" )
+
 option(USE_MFC_TOOLS
 		"Compile the built-in MFC based tools" OFF)
 		
@@ -43,11 +54,7 @@ endif()
 if(MSVC)
 	#message(STATUS CMAKE_ROOT: ${CMAKE_ROOT})
 	
-	#if(CMAKE_CL_64)
-	#	SET(EXECUTABLE_OUTPUT_PATH ${PROJECT_BINARY_DIR}/../bin/win64)
-	#else()
-	#	SET(EXECUTABLE_OUTPUT_PATH ${PROJECT_BINARY_DIR}/../bin/win32)
-	#endif()
+	#SET(EXECUTABLE_OUTPUT_PATH ${PROJECT_BINARY_DIR}/../bin/${WIN32_WIN64})
 	
 	#message(STATUS EXECUTABLE_OUTPUT_PATH: ${EXECUTABLE_OUTPUT_PATH})
 	#message(STATUS PROJECT_BINARY_DIR: ${PROJECT_BINARY_DIR})
@@ -174,6 +181,7 @@ elseif(MSVC)
 					-D_CRT_SECURE_NO_WARNINGS
                                         -D_MBCS
                                        #-DUSE_OPENAL
+										-DNO_OPENAL=1
 					-DUSE_EXCEPTIONS)
         ## Check for Version ##
         if( WINRT ) # Windows RT
@@ -197,6 +205,7 @@ endif()
 #if(STANDALONE)
 #	add_definitions(-DSTANDALONE)
 #endif()
+add_definitions(-DHAVE_OCULUS_API)
 
 if (USE_SYSTEM_ZLIB)
   find_package(ZLIB REQUIRED)
@@ -251,11 +260,8 @@ else (GLEW_FOUND)
 endif (GLEW_FOUND)
 
 if(WIN32)
-	if(CMAKE_SIZEOF_VOID_P EQUAL 4)
-		link_directories(${CMAKE_CURRENT_SOURCE_DIR}/libs/openvr/lib/win32)
-	else()
-		link_directories(${CMAKE_CURRENT_SOURCE_DIR}/libs/openvr/lib/win64)
-	endif()
+	link_directories(${CMAKE_CURRENT_SOURCE_DIR}/libs/openvr/lib/${WIN32_WIN64})
+	link_directories(${CMAKE_CURRENT_SOURCE_DIR}/libs/fmod/lib)
 endif(WIN32)
 
 if(UNIX)
@@ -272,6 +278,10 @@ endif(APPLE)
 
 set(OPENVR_LIBRARY "openvr_api")
 include_directories("libs/openvr/headers")
+if(WIN32)
+set(FMOD_LIBRARY "fmodex${X64}_vc")
+endif(WIN32)
+include_directories("libs/fmod/inc")
 
 add_subdirectory(idlib)
 
@@ -846,15 +856,114 @@ file(GLOB EDITOR_SCRIPT_SOURCES tools/script/*.cpp)
 file(GLOB EDITOR_SOUND_INCLUDES tools/sound/*.h)
 file(GLOB EDITOR_SOUND_SOURCES tools/sound/*.cpp)
 
-file(GLOB DOOMCLASSIC_INCLUDES ../doomclassic/src/doomlib.h)
-file(GLOB DOOMCLASSIC_SOURCES ../doomclassic/src/doomlib.cpp)
+file(GLOB DOOMCLASSIC_INCLUDES ../doomclassic/src/*.h)
+file(GLOB DOOMCLASSIC_SOURCES ../doomclassic/src/*.cpp;../doomclassic/src/*.c)
+include_directories(../doomclassic/src)
+
+file(GLOB DOOMCLASSIC_FRAGGLE_INCLUDES ../doomclassic/src/fragglescript/*.h)
+file(GLOB DOOMCLASSIC_FRAGGLE_SOURCES ../doomclassic/src/fragglescript/*.cpp)
+
+set(DOOMCLASSIC_G_DOOM_INCLUDES ../doomclassic/src/g_doom/a_doomglobal.h)
+set(DOOMCLASSIC_G_DOOM_SOURCES ../doomclassic/src/g_doom/a_doommisc.cpp)
+include_directories(../doomclassic/src/g_doom)
+
+set(DOOMCLASSIC_G_HERETIC_INCLUDES )
+set(DOOMCLASSIC_G_HERETIC_SOURCES ../doomclassic/src/g_heretic/a_hereticmisc.cpp)
+include_directories(../doomclassic/src/g_heretic)
+
+set(DOOMCLASSIC_G_HEXEN_INCLUDES ../doomclassic/src/g_hexen/a_hexenglobal.h)
+set(DOOMCLASSIC_G_HEXEN_SOURCES ../doomclassic/src/g_hexen/a_hexenmisc.cpp)
+include_directories(../doomclassic/src/g_hexen)
+
+file(GLOB DOOMCLASSIC_G_RAVEN_INCLUDES ../doomclassic/src/g_raven/*.h)
+file(GLOB DOOMCLASSIC_G_RAVEN_SOURCES ../doomclassic/src/g_raven/*.cpp)
+include_directories(../doomclassic/src/g_raven)
+
+set(DOOMCLASSIC_G_STRIFE_INCLUDES ../doomclassic/src/g_strife/a_strifeglobal.h)
+set(DOOMCLASSIC_G_STRIFE_SOURCES
+	../doomclassic/src/g_strife/a_strifestuff.cpp
+	../doomclassic/src/g_strife/strife_sbar.cpp)
+include_directories(../doomclassic/src/g_strife)
+
+file(GLOB DOOMCLASSIC_G_SHARED_INCLUDES ../doomclassic/src/g_shared/*.h)
+file(GLOB DOOMCLASSIC_G_SHARED_SOURCES ../doomclassic/src/g_shared/*.cpp)
+file(GLOB DOOMCLASSIC_G_SHARED_BAD ../doomclassic/src/g_shared/sbarinfo_commands.cpp)
+list(REMOVE_ITEM DOOMCLASSIC_G_SHARED_SOURCES ${DOOMCLASSIC_G_SHARED_BAD})
+include_directories(../doomclassic/src/g_shared)
+
+file(GLOB_RECURSE DOOMCLASSIC_GL_INCLUDES ../doomclassic/src/gl/*.h)
+file(GLOB_RECURSE DOOMCLASSIC_GL_SOURCES ../doomclassic/src/gl/*.c*)
+file(GLOB DOOMCLASSIC_GL_BAD ../doomclassic/src/gl/unused/*.*;../doomclassic/src/gl/scene/gl_ovrisolator.cpp)
+list(REMOVE_ITEM DOOMCLASSIC_GL_SOURCES ${DOOMCLASSIC_GL_BAD})
+
+file(GLOB DOOMCLASSIC_INTERMISSION_INCLUDES ../doomclassic/src/intermission/*.h)
+file(GLOB DOOMCLASSIC_INTERMISSION_SOURCES ../doomclassic/src/intermission/*.cpp)
+
+file(GLOB DOOMCLASSIC_MENU_INCLUDES ../doomclassic/src/menu/*.h)
+file(GLOB DOOMCLASSIC_MENU_SOURCES ../doomclassic/src/menu/*.cpp)
+
+file(GLOB_RECURSE DOOMCLASSIC_OPLSYNTH_INCLUDES ../doomclassic/src/oplsynth/*.h)
+file(GLOB_RECURSE DOOMCLASSIC_OPLSYNTH_SOURCES ../doomclassic/src/oplsynth/*.cpp)
+
+file(GLOB_RECURSE DOOMCLASSIC_POSIX_INCLUDES ../doomclassic/src/posix/*.h;../doomclassic/src/posix/sdl/*.h)
+file(GLOB DOOMCLASSIC_POSIX_SOURCES ../doomclassic/src/posix/*.cpp;../doomclassic/src/posix/sdl/*.cpp)
+
+file(GLOB DOOMCLASSIC_R_DATA_INCLUDES ../doomclassic/src/r_data/*.h)
+file(GLOB DOOMCLASSIC_R_DATA_SOURCES ../doomclassic/src/r_data/*.cpp)
+
+file(GLOB DOOMCLASSIC_RESOURCE_INCLUDES ../doomclassic/src/resourcefiles/*.h)
+file(GLOB DOOMCLASSIC_RESOURCE_SOURCES ../doomclassic/src/resourcefiles/*.cpp)
+
+file(GLOB DOOMCLASSIC_SFMT_INCLUDES ../doomclassic/src/sfmt/*.h)
+file(GLOB DOOMCLASSIC_SFMT_SOURCES ../doomclassic/src/sfmt/*.cpp)
+
+file(GLOB DOOMCLASSIC_SOUND_INCLUDES ../doomclassic/src/sound/*.h)
+file(GLOB DOOMCLASSIC_SOUND_SOURCES ../doomclassic/src/sound/*.cpp)
+include_directories(../doomclassic/src/sound)
+
+file(GLOB DOOMCLASSIC_TEXTURES_INCLUDES ../doomclassic/src/textures/*.h)
+file(GLOB DOOMCLASSIC_TEXTURES_SOURCES ../doomclassic/src/textures/*.cpp)
+
+file(GLOB DOOMCLASSIC_THINGDEF_INCLUDES ../doomclassic/src/thingdef/*.h)
+file(GLOB DOOMCLASSIC_THINGDEF_SOURCES ../doomclassic/src/thingdef/*.cpp)
+include_directories(../doomclassic/src/thingdef)
+
+file(GLOB DOOMCLASSIC_WILDMIDI_INCLUDES ../doomclassic/src/wildmidi/*.h)
+file(GLOB DOOMCLASSIC_WILDMIDI_SOURCES ../doomclassic/src/wildmidi/*.cpp)
+
+file(GLOB DOOMCLASSIC_WIN32_INCLUDES ../doomclassic/src/win32/*.h)
+file(GLOB DOOMCLASSIC_WIN32_SOURCES ../doomclassic/src/win32/*.cpp)
+include_directories(../doomclassic/src/win32)
+
+file(GLOB DOOMCLASSIC_XLAT_INCLUDES ../doomclassic/src/xlat/*.h)
+file(GLOB DOOMCLASSIC_XLAT_SOURCES ../doomclassic/src/xlat/*.cpp)
+
+file(GLOB DOOMCLASSIC_BZIP2_INCLUDES ../doomclassic/bzip2/*.h)
+file(GLOB DOOMCLASSIC_BZIP2_SOURCES ../doomclassic/bzip2/*.c)
+include_directories(../doomclassic/bzip2)
+
+file(GLOB_RECURSE DOOMCLASSIC_DUMB_INCLUDES ../doomclassic/dumb/*.h)
+file(GLOB_RECURSE DOOMCLASSIC_DUMB_SOURCES ../doomclassic/dumb/src/core/*.c;../doomclassic/dumb/src/helpers/*.c;../doomclassic/dumb/src/it/*.c*)
+include_directories(../doomclassic/dumb/include)
+
+file(GLOB DOOMCLASSIC_GDTOA_INCLUDES ../doomclassic/gdtoa/*.h)
+file(GLOB DOOMCLASSIC_GDTOA_SOURCES ../doomclassic/gdtoa/dmisc.c ../doomclassic/gdtoa/dtoa.c ../doomclassic/gdtoa/misc.c)
+include_directories(../doomclassic/gdtoa)
+
+file(GLOB DOOMCLASSIC_GME_INCLUDES "../doomclassic/game-music-emu/gme/*.h")
+file(GLOB DOOMCLASSIC_GME_SOURCES "../doomclassic/game-music-emu/gme/*.cpp")
+include_directories(../doomclassic/game-music-emu)
+
+file(GLOB DOOMCLASSIC_LZMA_INCLUDES ../doomclassic/lzma/c/*.h)
+file(GLOB DOOMCLASSIC_LZMA_SOURCES ../doomclassic/lzma/c/*.c)
+include_directories(../doomclassic/lzma/c)
 
 set(DOOMCLASSIC_STUBAUDIO_SOURCES ../doomclassic/src/i_sound_stub.cpp)
 set(DOOMCLASSIC_OPENAL_SOURCES ../doomclassic/src/i_sound_openal.cpp)
 set(DOOMCLASSIC_XAUDIO2_SOURCES ../doomclassic/src/i_sound_win32.cpp)
 
-file(GLOB DOOMCLASSIC_BFG_INCLUDES ../doomclassic/src/doomlib.h;../doomclassic/src/doominterface.h; ../doomclassic/src/doomdef.h;../doomclassic/src/d_event.h;../doomclassic/src/d_main.h; ../doomclassic/src/globaldata.h;../doomclassic/src/vars.h;../doomclassic/src/constructs.h; ../doomclassic/src/sound/i_sound.h)
-file(GLOB DOOMCLASSIC_BFG_SOURCES ../doomclassic/src/doomlib.cpp;../doomclassic/src/doominterface.cpp; ../doomclassic/src/d_main.cpp; ../doomclassic/src/globaldata.cpp; ../doomclassic/src/i_sound_win32.cpp)
+file(GLOB DOOMCLASSIC_BFG_INCLUDES ../doomclassic/src/doomlib.h;../doomclassic/src/doominterface.h; ../doomclassic/src/doomdef.h;../doomclassic/src/d_event.h;../doomclassic/src/d_main.h; ../doomclassic/src/globaldata.h;../doomclassic/src/vars.h;../doomclassic/src/constructs.h; ../doomclassic/src/sound/i_sound.h; ../doomclassic/src/Precompiled.h)
+file(GLOB DOOMCLASSIC_BFG_SOURCES ../doomclassic/src/doomlib.cpp;../doomclassic/src/doominterface.cpp; ../doomclassic/src/d_main.cpp; ../doomclassic/src/globaldata.cpp; ../doomclassic/src/i_sound_win32.cpp; ../doomclassic/src/Precompiled.cpp)
 list(REMOVE_ITEM DOOMCLASSIC_INCLUDES ${DOOMCLASSIC_BFG_INCLUDES})
 list(REMOVE_ITEM DOOMCLASSIC_SOURCES ${DOOMCLASSIC_BFG_SOURCES})
 
@@ -1056,9 +1165,44 @@ source_group("doomclassic" FILES ${DOOMCLASSIC_STUBAUDIO_SOURCES})
 source_group("doomclassic" FILES ${DOOMCLASSIC_OPENAL_SOURCES})
 #source_group("doomclassic" FILES ${DOOMCLASSIC_XAUDIO2_SOURCES})
 
+source_group("doomclassic\\Fragglescript" FILES ${DOOMCLASSIC_FRAGGLE_INCLUDES} ${DOOMCLASSIC_FRAGGLE_SOURCES})
+source_group("doomclassic\\Games\\Doom Game" FILES ${DOOMCLASSIC_G_DOOM_INCLUDES} ${DOOMCLASSIC_G_DOOM_SOURCES})
+source_group("doomclassic\\Games\\Heretic Game" FILES ${DOOMCLASSIC_G_HERETIC_INCLUDES} ${DOOMCLASSIC_G_HERETIC_SOURCES})
+source_group("doomclassic\\Games\\Hexen Game" FILES ${DOOMCLASSIC_G_HEXEN_INCLUDES} ${DOOMCLASSIC_G_HEXEN_SOURCES})
+source_group("doomclassic\\Games\\Strife Game" FILES ${DOOMCLASSIC_G_STRIFE_INCLUDES} ${DOOMCLASSIC_G_STRIFE_SOURCES})
+source_group("doomclassic\\Games\\Raven Shared" FILES ${DOOMCLASSIC_G_RAVEN_INCLUDES} ${DOOMCLASSIC_G_RAVEN_SOURCES})
+source_group("doomclassic\\Shared Game" FILES ${DOOMCLASSIC_G_SHARED_INCLUDES} ${DOOMCLASSIC_G_SHARED_SOURCES})
+source_group("doomclassic\\OpenGL Renderer" FILES ${DOOMCLASSIC_GL_INCLUDES} ${DOOMCLASSIC_GL_SOURCES})
+source_group("doomclassic\\Intermission" FILES ${DOOMCLASSIC_INTERMISSION_INCLUDES} ${DOOMCLASSIC_INTERMISSION_SOURCES})
+source_group("doomclassic\\Menu" FILES ${DOOMCLASSIC_MENU_INCLUDES} ${DOOMCLASSIC_MENU_SOURCES})
+source_group("doomclassic\\Audio Files\\OPL Synth" FILES ${DOOMCLASSIC_OPLSYNTH_INCLUDES} ${DOOMCLASSIC_OPLSYNTH_SOURCES})
+source_group("doomclassic\\POSIX Files" FILES ${DOOMCLASSIC_POSIX_INCLUDES} ${DOOMCLASSIC_POSIX_SOURCES})
+source_group("doomclassic\\Resource Headers/Sources" FILES ${DOOMCLASSIC_R_DATA_INCLUDES} ${DOOMCLASSIC_R_DATA_SOURCES})
+source_group("doomclassic\\Resource Files" FILES ${DOOMCLASSIC_RESOURCE_INCLUDES} ${DOOMCLASSIC_RESOURCE_SOURCES})
+source_group("doomclassic\\SFMT" FILES ${DOOMCLASSIC_SFMT_INCLUDES} ${DOOMCLASSIC_SFMT_SOURCES})
+source_group("doomclassic\\Audio Files" FILES ${DOOMCLASSIC_SOUND_INCLUDES} ${DOOMCLASSIC_SOUND_SOURCES})
+source_group("doomclassic\\Audio Files\\WildMidi" FILES ${DOOMCLASSIC_WILDMIDI_INCLUDES} ${DOOMCLASSIC_WILDMIDI_SOURCES})
+source_group("doomclassic\\Render Data\\Textures" FILES ${DOOMCLASSIC_TEXTURES_INCLUDES} ${DOOMCLASSIC_TEXTURES_SOURCES})
+source_group("doomclassic\\Decorate++" FILES ${DOOMCLASSIC_THINGDEF_INCLUDES} ${DOOMCLASSIC_THINGDEF_SOURCES})
+source_group("doomclassic\\Win32 Files" FILES ${DOOMCLASSIC_WIN32_INCLUDES} ${DOOMCLASSIC_WIN32_SOURCES})
+source_group("doomclassic\\xlat" FILES ${DOOMCLASSIC_XLAT_INCLUDES} ${DOOMCLASSIC_XLAT_SOURCES})
+
+source_group("doomclassic\\tools" FILES ${DOOMCLASSIC_TOOLS_INCLUDES} ${DOOMCLASSIC_TOOLS_SOURCES})
+source_group("doomclassic\\wadsrc" FILES ${DOOMCLASSIC_WADSRC_INCLUDES})
+source_group("doomclassic\\wadsrc" FILES ${DOOMCLASSIC_WADSRC_SOURCES})
+source_group("doomclassic\\wadsrc_bm" FILES ${DOOMCLASSIC_WADSRC_BM_INCLUDES})
+source_group("doomclassic\\wadsrc_bm" FILES ${DOOMCLASSIC_WADSRC_BM_SOURCES})
+source_group("doomclassic\\wadsrc_lights" FILES ${DOOMCLASSIC_WADSRC_LIGHTS_INCLUDES})
+source_group("doomclassic\\wadsrc_lights" FILES ${DOOMCLASSIC_WADSRC_LIGHTS_SOURCES})
+
 source_group("libs\\timidity" FILES ${TIMIDITY_INCLUDES})
 source_group("libs\\timidity" FILES ${TIMIDITY_SOURCES})
 
+source_group("libs\\bzip2" FILES ${DOOMCLASSIC_BZIP2_INCLUDES} ${DOOMCLASSIC_BZIP2_SOURCES})
+source_group("libs\\DUMB" FILES ${DOOMCLASSIC_DUMB_INCLUDES} ${DOOMCLASSIC_DUMB_SOURCES})
+source_group("libs\\gdtoa" FILES ${DOOMCLASSIC_GDTOA_INCLUDES} ${DOOMCLASSIC_GDTOA_SOURCES})
+source_group("libs\\Game Music Emulator" FILES ${DOOMCLASSIC_GME_INCLUDES} ${DOOMCLASSIC_GME_SOURCES})
+source_group("libs\\lzma" FILES ${DOOMCLASSIC_LZMA_INCLUDES} ${DOOMCLASSIC_LZMA_SOURCES})
 
 source_group("game-d3xp" FILES ${GAMED3XP_INCLUDES})
 source_group("game-d3xp" FILES ${GAMED3XP_SOURCES})
@@ -1180,9 +1324,36 @@ set(DOOM3_INCLUDES
 			${VR_INCLUDES}
 			${SWF_INCLUDES}
 			${COMMON_INCLUDES}
-			
+
 			${DOOMCLASSIC_INCLUDES}
 			${DOOMCLASSIC_BFG_INCLUDES}
+			${DOOMCLASSIC_FRAGGLE_INCLUDES}
+			${DOOMCLASSIC_G_DOOM_INCLUDES}
+			${DOOMCLASSIC_G_HERETIC_INCLUDES}
+			${DOOMCLASSIC_G_HEXEN_INCLUDES}
+			${DOOMCLASSIC_G_RAVEN_INCLUDES}
+			${DOOMCLASSIC_G_SHARED_INCLUDES}
+			${DOOMCLASSIC_G_STRIFE_INCLUDES}
+			${DOOMCLASSIC_GL_INCLUDES}
+			${DOOMCLASSIC_INTERMISSION_INCLUDES}
+			${DOOMCLASSIC_MENU_INCLUDES}
+			${DOOMCLASSIC_OPLSYNTH_INCLUDES}
+			#${DOOMCLASSIC_POSIX_INCLUDES}
+			${DOOMCLASSIC_R_DATA_INCLUDES}
+			${DOOMCLASSIC_RESOURCE_INCLUDES}
+			#${DOOMCLASSIC_SDL_INCLUDES}
+			${DOOMCLASSIC_SFMT_INCLUDES}
+			${DOOMCLASSIC_SOUND_INCLUDES}
+			${DOOMCLASSIC_TEXTURES_INCLUDES}
+			${DOOMCLASSIC_THINGDEF_INCLUDES}
+			${DOOMCLASSIC_WILDMIDI_INCLUDES}
+			${DOOMCLASSIC_WIN32_INCLUDES}
+			${DOOMCLASSIC_XLAT_INCLUDES}
+			${DOOMCLASSIC_BZIP2_INCLUDES}
+			${DOOMCLASSIC_DUMB_INCLUDES}
+			${DOOMCLASSIC_GDTOA_INCLUDES}
+			${DOOMCLASSIC_GME_INCLUDES}
+			${DOOMCLASSIC_LZMA_INCLUDES}
 			${TIMIDITY_INCLUDES}
 			
 			${COMPILER_INCLUDES}
@@ -1218,9 +1389,36 @@ set(DOOM3_SOURCES
 			${VR_SOURCES}
 			${SWF_SOURCES}
 			${COMMON_SOURCES}
-			
+
 			${DOOMCLASSIC_SOURCES}
 			${DOOMCLASSIC_BFG_SOURCES}
+			${DOOMCLASSIC_FRAGGLE_SOURCES}
+			${DOOMCLASSIC_G_DOOM_SOURCES}
+			${DOOMCLASSIC_G_HERETIC_SOURCES}
+			${DOOMCLASSIC_G_HEXEN_SOURCES}
+			${DOOMCLASSIC_G_RAVEN_SOURCES}
+			${DOOMCLASSIC_G_SHARED_SOURCES}
+			${DOOMCLASSIC_G_STRIFE_SOURCES}
+			${DOOMCLASSIC_GL_SOURCES}
+			${DOOMCLASSIC_INTERMISSION_SOURCES}
+			${DOOMCLASSIC_MENU_SOURCES}
+			${DOOMCLASSIC_OPLSYNTH_SOURCES}
+			#${DOOMCLASSIC_POSIX_SOURCES}
+			${DOOMCLASSIC_R_DATA_SOURCES}
+			${DOOMCLASSIC_RESOURCE_SOURCES}
+			#${DOOMCLASSIC_SDL_SOURCES}
+			${DOOMCLASSIC_SFMT_SOURCES}
+			${DOOMCLASSIC_SOUND_SOURCES}
+			${DOOMCLASSIC_TEXTURES_SOURCES}
+			${DOOMCLASSIC_THINGDEF_SOURCES}
+			${DOOMCLASSIC_WILDMIDI_SOURCES}
+			${DOOMCLASSIC_WIN32_SOURCES}
+			${DOOMCLASSIC_XLAT_SOURCES}
+			${DOOMCLASSIC_BZIP2_SOURCES}
+			${DOOMCLASSIC_DUMB_SOURCES}
+			${DOOMCLASSIC_GDTOA_SOURCES}
+			${DOOMCLASSIC_GME_SOURCES}
+			${DOOMCLASSIC_LZMA_SOURCES}
 			${TIMIDITY_SOURCES}
 			
 			${COMPILER_AAS_SOURCES}
@@ -1231,6 +1429,7 @@ set(DOOM3_SOURCES
 
 add_definitions(-DUSE_DOOMCLASSIC)
 
+add_definitions(-DNOASM)
 add_definitions(-D__DOOM__
 				#-DBUILD_FREETYPE
 				#-DFT2_BUILD_LIBRARY
@@ -1293,36 +1492,21 @@ if(MSVC)
 	
 	include_directories(${CMAKE_CURRENT_SOURCE_DIR}/libs/LibOVR/include)
 			
-	if(CMAKE_CL_64)
-		link_directories(
-				${CMAKE_CURRENT_SOURCE_DIR}/libs/LibOVR/Lib/Windows/x64/Release/VS2013
-				${CMAKE_CURRENT_SOURCE_DIR}/libs/LibOVR/Lib/x64/VS2013)
-						
-		set(LibOVR_LIBRARIES
-			libovr.lib
-			ws2_32.lib)
+	link_directories(
+			${CMAKE_CURRENT_SOURCE_DIR}/libs/LibOVR/Lib/Windows/${WIN32_X64}/Release/VS2013
+			${CMAKE_CURRENT_SOURCE_DIR}/libs/LibOVR/Lib/${WIN32_X64}/VS2013)
 					
-	else()
-		link_directories(
-				${CMAKE_CURRENT_SOURCE_DIR}/libs/LibOVR/Lib/Windows/Win32/Release/VS2013
-				${CMAKE_CURRENT_SOURCE_DIR}/libs/LibOVR/Lib/Win32/VS2013)
-					
-			set(LibOVR_LIBRARIES
-			libovr.lib
-			ws2_32.lib)
-		
-	endif()
-		
+	set(LibOVR_LIBRARIES
+		libovr.lib
+		ws2_32.lib)
+				
+	
 	if(OPENAL)
 		add_definitions(-DUSE_OPENAL)
 	
 		include_directories(${CMAKE_CURRENT_SOURCE_DIR}/libs/openal-soft/include)
 		
-		if(CMAKE_CL_64)
-			link_directories(${CMAKE_CURRENT_SOURCE_DIR}/libs/openal-soft/lib/win64)
-		else()
-			link_directories(${CMAKE_CURRENT_SOURCE_DIR}/libs/openal-soft/lib/win32)
-		endif()
+		link_directories(${CMAKE_CURRENT_SOURCE_DIR}/libs/openal-soft/lib/${WIN32_WIN64})
 		
 		list(APPEND DOOM3_INCLUDES ${OPENAL_INCLUDES})
 		list(APPEND DOOM3_SOURCES
@@ -1332,11 +1516,10 @@ if(MSVC)
 		set(OpenAL_LIBRARIES
 			OpenAL32)
 			
+		install(FILES libs/openal-soft/lib/${WIN32_WIN64}/OpenAL${X32_64}.dll DESTINATION .)
 		if(CMAKE_CL_64)
-			install(FILES libs/openal-soft/lib/win64/OpenAL64.dll DESTINATION .)
 		else()
-			install(FILES libs/openal-soft/lib/win32/OpenAL32.dll DESTINATION .)
-			install(FILES libs/openal-soft/lib/win32/OpenAL32.pdb DESTINATION .)
+			install(FILES libs/openal-soft/lib/${WIN32_WIN64}/OpenAL${X32_64}.pdb DESTINATION .)
 		endif()
 	else()
 		list(APPEND DOOM3_INCLUDES ${XAUDIO2_INCLUDES})
@@ -1347,24 +1530,14 @@ if(MSVC)
 	
 	if(FFMPEG)
 		add_definitions(-DUSE_FFMPEG)
-	
-		if(CMAKE_CL_64)
-			include_directories(libs/ffmpeg-win64/include)
-			include_directories(libs/ffmpeg-win64/include/libswscale)
-			include_directories(libs/ffmpeg-win64/include/libavformat)
-			include_directories(libs/ffmpeg-win64/include/libavdevice)
-			include_directories(libs/ffmpeg-win64/include/libavcodec)
-			
-			link_directories(${CMAKE_CURRENT_SOURCE_DIR}/libs/ffmpeg-win64/lib)
-		else()
-			include_directories(libs/ffmpeg-win32/include)
-			include_directories(libs/ffmpeg-win32/include/libswscale)
-			include_directories(libs/ffmpeg-win32/include/libavformat)
-			include_directories(libs/ffmpeg-win32/include/libavdevice)
-			include_directories(libs/ffmpeg-win32/include/libavcodec)
-			
-			link_directories(${CMAKE_CURRENT_SOURCE_DIR}/libs/ffmpeg-win32/lib)
-		endif()
+		
+		include_directories(libs/ffmpeg-${WIN32_WIN64}/include)
+		include_directories(libs/ffmpeg-${WIN32_WIN64}/include/libswscale)
+		include_directories(libs/ffmpeg-${WIN32_WIN64}/include/libavformat)
+		include_directories(libs/ffmpeg-${WIN32_WIN64}/include/libavdevice)
+		include_directories(libs/ffmpeg-${WIN32_WIN64}/include/libavcodec)
+		
+		link_directories(${CMAKE_CURRENT_SOURCE_DIR}/libs/ffmpeg-${WIN32_WIN64}/lib)
 		
 		set(FFmpeg_LIBRARIES
 				avcodec
@@ -1425,8 +1598,33 @@ if(MSVC)
 	list(REMOVE_ITEM DOOM3_PRECOMPILED_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/renderer/jobs/ShadowShared.cpp)
 	list(REMOVE_ITEM DOOM3_PRECOMPILED_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/renderer/RenderLog.cpp)
         list(REMOVE_ITEM DOOM3_PRECOMPILED_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/framework/precompiled.cpp)
-	#list(REMOVE_ITEM DOOM3_PRECOMPILED_SOURCES ${DOOMCLASSIC_SOURCES})
+	list(REMOVE_ITEM DOOM3_PRECOMPILED_SOURCES ${DOOMCLASSIC_SOURCES})
 	list(REMOVE_ITEM DOOM3_PRECOMPILED_SOURCES ${DOOMCLASSIC_BFG_SOURCES})
+	list(REMOVE_ITEM DOOM3_PRECOMPILED_SOURCES ${DOOMCLASSIC_FRAGGLE_SOURCES})
+	list(REMOVE_ITEM DOOM3_PRECOMPILED_SOURCES ${DOOMCLASSIC_G_DOOM_SOURCES})
+	list(REMOVE_ITEM DOOM3_PRECOMPILED_SOURCES ${DOOMCLASSIC_G_HERETIC_SOURCES})
+	list(REMOVE_ITEM DOOM3_PRECOMPILED_SOURCES ${DOOMCLASSIC_G_HEXEN_SOURCES})
+	list(REMOVE_ITEM DOOM3_PRECOMPILED_SOURCES ${DOOMCLASSIC_G_RAVEN_SOURCES})
+	list(REMOVE_ITEM DOOM3_PRECOMPILED_SOURCES ${DOOMCLASSIC_G_SHARED_SOURCES})
+	list(REMOVE_ITEM DOOM3_PRECOMPILED_SOURCES ${DOOMCLASSIC_G_STRIFE_SOURCES})
+	list(REMOVE_ITEM DOOM3_PRECOMPILED_SOURCES ${DOOMCLASSIC_GL_SOURCES})
+	list(REMOVE_ITEM DOOM3_PRECOMPILED_SOURCES ${DOOMCLASSIC_INTERMISSION_SOURCES})
+	list(REMOVE_ITEM DOOM3_PRECOMPILED_SOURCES ${DOOMCLASSIC_MENU_SOURCES})
+	list(REMOVE_ITEM DOOM3_PRECOMPILED_SOURCES ${DOOMCLASSIC_OPLSYNTH_SOURCES})
+	list(REMOVE_ITEM DOOM3_PRECOMPILED_SOURCES ${DOOMCLASSIC_R_DATA_SOURCES})
+	list(REMOVE_ITEM DOOM3_PRECOMPILED_SOURCES ${DOOMCLASSIC_RESOURCE_SOURCES})
+	list(REMOVE_ITEM DOOM3_PRECOMPILED_SOURCES ${DOOMCLASSIC_SFMT_SOURCES})
+	list(REMOVE_ITEM DOOM3_PRECOMPILED_SOURCES ${DOOMCLASSIC_SOUND_SOURCES})
+	list(REMOVE_ITEM DOOM3_PRECOMPILED_SOURCES ${DOOMCLASSIC_TEXTURES_SOURCES})
+	list(REMOVE_ITEM DOOM3_PRECOMPILED_SOURCES ${DOOMCLASSIC_THINGDEF_SOURCES})
+	list(REMOVE_ITEM DOOM3_PRECOMPILED_SOURCES ${DOOMCLASSIC_WIN32_SOURCES})
+	list(REMOVE_ITEM DOOM3_PRECOMPILED_SOURCES ${DOOMCLASSIC_WILDMIDI_SOURCES})
+	list(REMOVE_ITEM DOOM3_PRECOMPILED_SOURCES ${DOOMCLASSIC_XLAT_SOURCES})
+	list(REMOVE_ITEM DOOM3_PRECOMPILED_SOURCES ${DOOMCLASSIC_BZIP2_SOURCES})
+	list(REMOVE_ITEM DOOM3_PRECOMPILED_SOURCES ${DOOMCLASSIC_DUMB_SOURCES})
+	list(REMOVE_ITEM DOOM3_PRECOMPILED_SOURCES ${DOOMCLASSIC_GDTOA_SOURCES})
+	list(REMOVE_ITEM DOOM3_PRECOMPILED_SOURCES ${DOOMCLASSIC_GME_SOURCES})
+	list(REMOVE_ITEM DOOM3_PRECOMPILED_SOURCES ${DOOMCLASSIC_LZMA_SOURCES})
 
 	
         set_source_files_properties(
@@ -1453,38 +1651,25 @@ if(MSVC)
 	#			   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/libs/curl/lib
     #               COMMENT "Compiling libcURL")
 
-	if(CMAKE_SIZEOF_VOID_P EQUAL 4)
-		# copy OpenVR dlls
-		add_custom_command(TARGET Doom3BFGVR
-				POST_BUILD
-				COMMAND ${CMAKE_COMMAND} -E copy
-				${CMAKE_CURRENT_SOURCE_DIR}/libs/openvr/bin/win32/openvr_api.dll ${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_CFG_INTDIR})
-		# add_custom_command(TARGET Doom3BFGVR
-		#		POST_BUILD
-		#		COMMAND ${CMAKE_COMMAND} -E copy
-		#		${CMAKE_CURRENT_SOURCE_DIR}/libs/openvr/bin/win32/openvr_api.pdb ${CMAKE_CURRENT_BINARY_DIR}/Debug)
-		# add_custom_command(TARGET Doom3BFGVR
-		#		POST_BUILD
-		#		COMMAND ${CMAKE_COMMAND} -E copy
-		#		${CMAKE_CURRENT_SOURCE_DIR}/libs/openvr/bin/win32/openvr_api.pdb ${CMAKE_CURRENT_BINARY_DIR}/RelWithDebInfo)
+	# copy OpenVR dlls
+	add_custom_command(TARGET Doom3BFGVR
+			POST_BUILD
+			COMMAND ${CMAKE_COMMAND} -E copy
+			${CMAKE_CURRENT_SOURCE_DIR}/libs/openvr/bin/${WIN32_WIN64}/openvr_api.dll ${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_CFG_INTDIR})
+	# add_custom_command(TARGET Doom3BFGVR
+	#		POST_BUILD
+	#		COMMAND ${CMAKE_COMMAND} -E copy
+	#		${CMAKE_CURRENT_SOURCE_DIR}/libs/openvr/bin/${WIN32_WIN64}/openvr_api.pdb ${CMAKE_CURRENT_BINARY_DIR}/Debug)
+	# add_custom_command(TARGET Doom3BFGVR
+	#		POST_BUILD
+	#		COMMAND ${CMAKE_COMMAND} -E copy
+	#		${CMAKE_CURRENT_SOURCE_DIR}/libs/openvr/bin/${WIN32_WIN64}/openvr_api.pdb ${CMAKE_CURRENT_BINARY_DIR}/RelWithDebInfo)
+	# copy FMOD dlls
+	add_custom_command(TARGET Doom3BFGVR
+			POST_BUILD
+			COMMAND ${CMAKE_COMMAND} -E copy
+			${CMAKE_CURRENT_SOURCE_DIR}/libs/fmod/fmodex${X64}.dll ${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_CFG_INTDIR})
 
-	else()
-		# copy OpenVR dlls
-		add_custom_command(TARGET Doom3BFGVR
-				POST_BUILD
-				COMMAND ${CMAKE_COMMAND} -E copy
-				${CMAKE_CURRENT_SOURCE_DIR}/libs/openvr/bin/win64/openvr_api.dll ${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_CFG_INTDIR})
-		# add_custom_command(TARGET Doom3BFGVR
-		#		POST_BUILD
-		#		COMMAND ${CMAKE_COMMAND} -E copy
-		#		${CMAKE_CURRENT_SOURCE_DIR}/libs/openvr/bin/win64/openvr_api.pdb ${CMAKE_CURRENT_BINARY_DIR}/Debug)
-		# add_custom_command(TARGET Doom3BFGVR
-		#		POST_BUILD
-		#		COMMAND ${CMAKE_COMMAND} -E copy
-		#		${CMAKE_CURRENT_SOURCE_DIR}/libs/openvr/bin/win64/openvr_api.pdb ${CMAKE_CURRENT_BINARY_DIR}/RelWithDebInfo)
-
-	endif()
-		
 	add_dependencies(Doom3BFGVR idlib)
 	target_link_libraries(Doom3BFGVR
 		idlib
@@ -1496,6 +1681,7 @@ if(MSVC)
 		dbghelp
 		#eaxguid
 		iphlpapi
+		comctl32
 		winmm
 		wsock32.lib
 		${OpenAL_LIBRARIES}
@@ -1506,6 +1692,7 @@ if(MSVC)
         ${GLEW_LIBRARY}
         ${OPENVR_LIBRARY}
 		${LibOVR_LIBRARIES}
+        ${FMOD_LIBRARY}
 		sapi.lib
 		)
 		
@@ -1673,6 +1860,7 @@ else()
             ${JPEG_LIBRARY}
             ${GLEW_LIBRARY}
             ${OPENVR_LIBRARY}
+            ${FMOD_LIBRARY}
 			)
 	endif()
     
