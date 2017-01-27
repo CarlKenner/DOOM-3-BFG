@@ -3,6 +3,18 @@ set(CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake)
 
 project(Doom3BFGVR)
 
+if( COMMAND cmake_policy )
+	if( POLICY CMP0011 )
+		cmake_policy( SET CMP0011 NEW )
+	endif( POLICY CMP0011 )
+	if( POLICY CMP0054 )
+		cmake_policy( SET CMP0054 NEW )
+	endif( POLICY CMP0054 )
+	if( POLICY CMP0003 )
+		cmake_policy( SET CMP0003 NEW )
+	endif( POLICY CMP0003 )
+endif( COMMAND cmake_policy )
+
 if( CMAKE_SIZEOF_VOID_P MATCHES "8" )
 	set( X64 64 )
 	set( X32_64 64 )
@@ -14,12 +26,79 @@ else( CMAKE_SIZEOF_VOID_P MATCHES "8" )
 	set( WIN32_X64 win32 )
 endif( CMAKE_SIZEOF_VOID_P MATCHES "8" )
 
+list( APPEND CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/../doomclassic )
+include( CreateLaunchers )
+include( FindPackageHandleStandardArgs )
+
+option( NO_GENERATOR_EXPRESSIONS "Disable generator expressions (for building pk3s with IDEs)." OFF )
+
+# Simplify pk3 building, add_pk3(filename srcdirectory)
+function( add_pk3 PK3_NAME PK3_DIR )
+	# Generate target name. Just use "pk3" for main pk3 target.
+	string( REPLACE "." "_" PK3_TARGET ${PK3_NAME} )
+	if( ${PK3_TARGET} STREQUAL "zdoom_pk3" )
+		set( PK3_TARGET "pk3" )
+	endif( ${PK3_TARGET} STREQUAL "zdoom_pk3" )
+
+	if( NOT NO_GENERATOR_EXPRESSIONS AND NOT ZDOOM_OUTPUT_OLDSTYLE )
+		add_custom_command( OUTPUT ${ZDOOM_OUTPUT_DIR}/${PK3_NAME}
+			COMMAND zipdir -udf ${ZDOOM_OUTPUT_DIR}/${PK3_NAME} ${PK3_DIR}
+			COMMAND ${CMAKE_COMMAND} -E copy_if_different ${ZDOOM_OUTPUT_DIR}/${PK3_NAME} $<TARGET_FILE_DIR:Doom3BFGVR>/${PK3_NAME}
+			DEPENDS zipdir )
+	else( NOT NO_GENERATOR_EXPRESSIONS AND NOT ZDOOM_OUTPUT_OLDSTYLE )
+		add_custom_command( OUTPUT ${ZDOOM_OUTPUT_DIR}/${PK3_NAME}
+			COMMAND zipdir -udf ${ZDOOM_OUTPUT_DIR}/${PK3_NAME} ${PK3_DIR}
+			DEPENDS zipdir )
+	endif( NOT NO_GENERATOR_EXPRESSIONS AND NOT ZDOOM_OUTPUT_OLDSTYLE )
+
+	if( NOT NO_GENERATOR_EXPRESSIONS )
+		# Touch the zipdir executable here so that the pk3s are forced to
+		# rebuild each time since their dependecy has "changed."
+		add_custom_target( ${PK3_TARGET} ALL
+			COMMAND ${CMAKE_COMMAND} -E touch $<TARGET_FILE:zipdir>
+			DEPENDS ${ZDOOM_OUTPUT_DIR}/${PK3_NAME} )
+	endif( NOT NO_GENERATOR_EXPRESSIONS )
+
+	install(FILES ${ZDOOM_OUTPUT_DIR}/${PK3_NAME} DESTINATION ".")
+endfunction( add_pk3 )
+
+# Macro for building libraries without debugging information
+macro( make_release_only )
+	set( CMAKE_C_FLAGS_MINSIZEREL ${CMAKE_C_FLAGS_RELEASE} )
+	set( CMAKE_C_FLAGS_RELWITHDEBINFO ${CMAKE_C_FLAGS_RELEASE} )
+	string( REPLACE "/MT " "/MTd " CMAKE_C_FLAGS_DEBUG ${CMAKE_C_FLAGS_RELEASE} )
+	set( CMAKE_CXX_FLAGS_MINSIZEREL ${CMAKE_CXX_FLAGS_RELEASE} )
+	set( CMAKE_CXX_FLAGS_RELWITHDEBINFO ${CMAKE_CXX_FLAGS_RELEASE} )
+	string( REPLACE "/MT " "/MTd " CMAKE_CXX_FLAGS_DEBUG ${CMAKE_CXX_FLAGS_RELEASE} )
+endmacro( make_release_only )
+
 option(USE_MFC_TOOLS
-		"Compile the built-in MFC based tools" OFF)
+		"Compile the built-in MFC based GZ3Doom tools" OFF)
 		
 option(MONOLITH
-		"Embed game logic into main executable" ON)
+		"Embed GZ3Doom game logic into main executable" ON)
 		
+
+option( NO_FMOD "Disable FMODEx sound support" OFF )
+option( NO_OPENAL "Disable OpenAL sound support" OFF )
+
+set( ZDOOM_OUTPUT_DIR ${CMAKE_BINARY_DIR} CACHE PATH "Directory where zdoom.pk3 and the executable will be created." )
+set( ZDOOM_EXE_NAME "GZ3Doom" CACHE FILEPATH "Name of the executable to create" )
+
+if( MSVC )
+	# Eliminate unreferenced functions and data
+	# Perform identical COMDAT folding
+	set( REL_LINKER_FLAGS "/opt:ref /opt:icf /nodefaultlib:msvcrt /TSAWARE /LARGEADDRESSAWARE" )
+endif( MSVC )	
+
+set( BZIP2_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../doomclassic/bzip2" )
+set( BZIP2_LIBRARIES bz2 )
+set( BZIP2_LIBRARY bz2 )
+set( ZLIB_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/libs/zlib;${CMAKE_CURRENT_SOURCE_DIR} )
+#set( ZLIB_LIBRARIES z )
+#set( ZLIB_LIBRARY z )
+set( LZMA_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../doomclassic/lzma/C" )
+
 option(SDL2
 		"Use SDL2 instead of SDL1.2" ON)
 		
@@ -167,10 +246,10 @@ elseif(MSVC)
 		
 		# RB: without /SAFESEH:NO we can't link against ffmpeg libs and VS2013 or we have to build our own
 		# libs for newer compilers
-		set(CMAKE_EXE_LINKER_FLAGS_DEBUG "${CMAKE_EXE_LINKER_FLAGS_DEBUG} /SAFESEH:NO")
-		set(CMAKE_EXE_LINKER_FLAGS_MINSIZEREL "${CMAKE_EXE_LINKER_FLAGS_MINSIZEREL} /SAFESEH:NO")
-		set(CMAKE_EXE_LINKER_FLAGS_RELEASE "${CMAKE_EXE_LINKER_FLAGS_RELEASE} /SAFESEH:NO")
-		set(CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} /SAFESEH:NO")
+		set(CMAKE_EXE_LINKER_FLAGS_DEBUG "${CMAKE_EXE_LINKER_FLAGS_DEBUG} ${REL_LINKER_FLAGS} /SAFESEH:NO")
+		set(CMAKE_EXE_LINKER_FLAGS_MINSIZEREL "${CMAKE_EXE_LINKER_FLAGS_MINSIZEREL} ${REL_LINKER_FLAGS} /SAFESEH:NO")
+		set(CMAKE_EXE_LINKER_FLAGS_RELEASE "${CMAKE_EXE_LINKER_FLAGS_RELEASE} ${REL_LINKER_FLAGS} /SAFESEH:NO")
+		set(CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} ${REL_LINKER_FLAGS} /SAFESEH:NO")
 	# endif()
 	
 
@@ -1073,6 +1152,16 @@ file(GLOB COMMON_SOURCES sys/common/*.cpp)
 file(GLOB SDL_INCLUDES sys/sdl/*.h)
 file(GLOB SDL_SOURCES sys/sdl/*.cpp)
 
+# Carl: GZ3Doom
+add_subdirectory( ../doomclassic/bzip2 ${CMAKE_CURRENT_BINARY_DIR}/bzip2)
+add_subdirectory( ../doomclassic/lzma ${CMAKE_CURRENT_BINARY_DIR}/lzma)
+add_subdirectory( ../doomclassic/tools ${CMAKE_CURRENT_BINARY_DIR}/tools)
+add_subdirectory( ../doomclassic/dumb ${CMAKE_CURRENT_BINARY_DIR}/dumb)
+add_subdirectory( ../doomclassic/gdtoa ${CMAKE_CURRENT_BINARY_DIR}/gdtoa)
+add_subdirectory( ../doomclassic/wadsrc ${CMAKE_CURRENT_BINARY_DIR}/wadsrc)
+add_subdirectory( ../doomclassic/wadsrc_bm ${CMAKE_CURRENT_BINARY_DIR}/wadsrc_bm)
+add_subdirectory( ../doomclassic/wadsrc_lights ${CMAKE_CURRENT_BINARY_DIR}/wadsrc_lights)
+
 source_group("aas" FILES ${AAS_INCLUDES})
 source_group("aas" FILES ${AAS_SOURCES})
 
@@ -1522,6 +1611,8 @@ if(MSVC)
 			install(FILES libs/openal-soft/lib/${WIN32_WIN64}/OpenAL${X32_64}.pdb DESTINATION .)
 		endif()
 	else()
+		add_definitions(-DNO_OPENAL)
+		
 		list(APPEND DOOM3_INCLUDES ${XAUDIO2_INCLUDES})
 		list(APPEND DOOM3_SOURCES
 			${XAUDIO2_SOURCES}

@@ -6,7 +6,7 @@ if(NOT CMAKE_CROSSCOMPILING)
 	message(STATUS "${LZMA_INCLUDE_DIR}" )
 	include_directories( "${ZLIB_INCLUDE_DIR}" "${BZIP2_INCLUDE_DIR}" "${LZMA_INCLUDE_DIR}" )
 	add_executable( zipdir
-		zipdir.c )
+		zipdir.c ${ZLIB_SOURCES})
 	target_link_libraries( zipdir ${ZLIB_LIBRARIES} ${BZIP2_LIBRARIES} lzma )
 	set( CROSS_EXPORTS ${CROSS_EXPORTS} zipdir PARENT_SCOPE )
 endif(NOT CMAKE_CROSSCOMPILING)
