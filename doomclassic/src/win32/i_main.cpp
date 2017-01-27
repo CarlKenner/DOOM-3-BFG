@@ -34,8 +34,13 @@
 
 // HEADER FILES ------------------------------------------------------------
 
+#include "Precompiled.h"
+#include "sys/win32/win_local.h"
+
 #define WIN32_LEAN_AND_MEAN
+#ifndef _WIN32_WINNT
 #define _WIN32_WINNT 0x0501
+#endif
 #include <windows.h>
 #include <mmsystem.h>
 #include <objbase.h>
@@ -973,6 +978,7 @@ void DoMain (HINSTANCE hInstance)
 		/* create window */
 		char caption[100];
 		mysnprintf(caption, countof(caption), "" GAMESIG " %s " X64 " (%s)", GetVersionString(), GetGitTime());
+#ifndef __DOOM__
 		Window = CreateWindowEx(
 				WS_EX_APPWINDOW,
 				(LPCTSTR)WinClassName,
@@ -983,6 +989,9 @@ void DoMain (HINSTANCE hInstance)
 				(HMENU)  NULL,
 						hInstance,
 				NULL);
+#else
+		Window = win32.hWnd;
+#endif
 
 		if (!Window)
 			I_FatalError ("Could not open window");

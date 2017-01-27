@@ -727,6 +727,9 @@ bool Win32GLVideo::SetupPixelFormat(int multisample)
 
 	if (!::SetPixelFormat(m_hDC, pixelFormat, NULL))
 	{
+#ifdef __DOOM__
+		return true;
+#endif
 		I_Error("R_OPENGL: Couldn't set pixel format.\n");
 		return false;
 	}
