@@ -1051,9 +1051,9 @@ void DoMain (HINSTANCE hInstance)
 	{
 		I_ShutdownGraphics ();
 		RestoreConView ();
-		if (error.GetMessage ())
+		if (error.GetMsg ())
 		{
-			ShowErrorPane (error.GetMessage());
+			ShowErrorPane (error.GetMsg());
 		}
 		exit (-1);
 	}

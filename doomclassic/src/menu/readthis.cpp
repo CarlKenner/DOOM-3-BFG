@@ -99,8 +99,8 @@ void DReadThisMenu::Drawer()
 	}
 
 	screen->Dim(0, 1.0, 0,0, SCREENWIDTH, SCREENHEIGHT);
-	alpha = MIN<fixed_t> (Scale (gametic - mInfoTic, OPAQUE, TICRATE/3), OPAQUE);
-	if (alpha < OPAQUE && prevpic != NULL)
+	alpha = MIN<fixed_t> (Scale (gametic - mInfoTic, FULLY_OPAQUE, TICRATE/3), FULLY_OPAQUE);
+	if (alpha < FULLY_OPAQUE && prevpic != NULL)
 	{
 		screen->DrawTexture (prevpic, 0, 0, DTA_Fullscreen, true, TAG_DONE);
 	}

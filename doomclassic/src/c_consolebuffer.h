@@ -41,7 +41,7 @@
 
 enum EAddType
 {
-	NEWLINE,
+	NEW_LINE,
 	APPENDLINE,
 	REPLACELINE
 };

@@ -1017,9 +1017,9 @@ void D_DoomLoop ()
 		}
 		catch (CRecoverableError &error)
 		{
-			if (error.GetMessage ())
+			if (error.GetMsg ())
 			{
-				Printf (PRINT_BOLD, "\n%s\n", error.GetMessage());
+				Printf (PRINT_BOLD, "\n%s\n", error.GetMsg());
 			}
 			D_ErrorCleanup ();
 		}

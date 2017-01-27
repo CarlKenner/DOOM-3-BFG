@@ -441,7 +441,7 @@ DEFINE_ACTION_FUNCTION(AActor, A_ClearShadow)
 {
 	self->flags &= ~(MF_STRIFEx8000000|MF_SHADOW);
 	self->RenderStyle = STYLE_Normal;
-	self->alpha = OPAQUE;
+	self->alpha = FULLY_OPAQUE;
 }
 
 static FRandom pr_gethurt ("HurtMe!");

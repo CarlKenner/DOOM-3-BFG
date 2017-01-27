@@ -1491,16 +1491,6 @@ WinMain
 */
 int WINAPI WinMain( HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow ) {
 
-	// Carl: if they are trying to launch a classic doom IWAD, then launch doom classic instead
-	for (int i = 1; i < __argc; ++i)
-	{
-		if ( idStr::Icmp(__argv[i], "-iwad") == 0 )
-		{
-			ClassicWinMain( hInstance, hPrevInstance, "", nCmdShow );
-			return 0;
-		}
-	}
-
 	const HCURSOR hcurSave = ::SetCursor( LoadCursor( 0, IDC_WAIT ) );
 
 	Sys_SetPhysicalWorkMemory( 192 << 20, 1024 << 20 );
@@ -1545,7 +1535,17 @@ int WINAPI WinMain( HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLin
 //	Sys_FPU_EnableExceptions( TEST_FPU_EXCEPTIONS );
 	Sys_FPU_SetPrecision( FPU_PRECISION_DOUBLE_EXTENDED );
 
-	common->Init( 0, NULL, lpCmdLine );
+	common->Init(0, NULL, lpCmdLine);
+
+	// Carl: if they are trying to launch a classic doom IWAD, then launch doom classic instead
+	for (int i = 1; i < __argc; ++i)
+	{
+		if (idStr::Icmp(__argv[i], "-iwad") == 0)
+		{
+			ClassicWinMain(hInstance, hPrevInstance, "", nCmdShow);
+			return 0;
+		}
+	}
 
 #if TEST_FPU_EXCEPTIONS != 0
 	common->Printf( Sys_FPU_GetState() );

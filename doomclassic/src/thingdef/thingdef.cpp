@@ -224,7 +224,7 @@ void FinishActor(const FScriptPosition &sc, FActorInfo *info, Baggage &bag)
 	}
 	catch (CRecoverableError &err)
 	{
-		sc.Message(MSG_ERROR, "%s", err.GetMessage());
+		sc.Message(MSG_ERROR, "%s", err.GetMsg());
 		bag.statedef.MakeStateDefines(NULL);
 		return;
 	}

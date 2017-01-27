@@ -302,7 +302,7 @@ FShader *FShaderManager::Compile (const char *ShaderName, const char *ShaderPath
 	{
 		if (shader != NULL) delete shader;
 		shader = NULL;
-		I_FatalError("Unable to load shader %s:\n%s\n", ShaderName, err.GetMessage());
+		I_FatalError("Unable to load shader %s:\n%s\n", ShaderName, err.GetMsg());
 	}
 	return shader;
 }

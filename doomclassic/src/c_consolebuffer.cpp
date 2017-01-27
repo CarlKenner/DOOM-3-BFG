@@ -46,7 +46,7 @@
 FConsoleBuffer::FConsoleBuffer()
 {
 	mLogFile = NULL;
-	mAddType = NEWLINE;
+	mAddType = NEW_LINE;
 	mLastFont = NULL;
 	mLastDisplayWidth = -1;
 	mLastLineNeedsUpdate = false;
@@ -128,7 +128,7 @@ void FConsoleBuffer::AddText(int printlevel, const char *text, FILE *logfile)
 	else if (text[textsize-1] == '\n')
 	{
 		textsize--;
-		mAddType = NEWLINE;
+		mAddType = NEW_LINE;
 	}
 	else
 	{
@@ -223,8 +223,8 @@ void FConsoleBuffer::WriteContentToLog(FILE *LogFile)
 
 void FConsoleBuffer::Linefeed(FILE *Logfile)
 {
-	if (mAddType != NEWLINE && Logfile != NULL) fputc('\n', Logfile);
-	mAddType = NEWLINE;
+	if (mAddType != NEW_LINE && Logfile != NULL) fputc('\n', Logfile);
+	mAddType = NEW_LINE;
 }
 
 //==========================================================================

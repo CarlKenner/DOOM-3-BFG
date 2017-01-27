@@ -32,6 +32,8 @@
 **
 */
 
+#include "Precompiled.h"
+
 #include "templates.h"
 #include "p_setup.h"
 #include <stdarg.h>
@@ -473,10 +475,10 @@ void C_AddNotifyString (int printlevel, const char *source)
 {
 	static enum
 	{
-		NEWLINE,
+		NEW_LINE,
 		APPENDLINE,
 		REPLACELINE
-	} addtype = NEWLINE;
+	} addtype = NEW_LINE;
 
 	FBrokenLines *lines;
 	int i, len, width;
@@ -503,7 +505,7 @@ void C_AddNotifyString (int printlevel, const char *source)
 	else
 	{
 		lines = V_BreakLines (SmallFont, width, source);
-		addtype = (addtype == APPENDLINE) ? NEWLINE : addtype;
+		addtype = (addtype == APPENDLINE) ? NEW_LINE : addtype;
 	}
 
 	if (lines == NULL)
@@ -511,7 +513,7 @@ void C_AddNotifyString (int printlevel, const char *source)
 
 	for (i = 0; lines[i].Width >= 0; i++)
 	{
-		if (addtype == NEWLINE)
+		if (addtype == NEW_LINE)
 		{
 			for (int j = 0; j < NUMNOTIFIES-1; ++j)
 			{
@@ -521,7 +523,7 @@ void C_AddNotifyString (int printlevel, const char *source)
 		NotifyStrings[NUMNOTIFIES-1].Text = lines[i].Text;
 		NotifyStrings[NUMNOTIFIES-1].TimeOut = gametic + (int)(con_notifytime * TICRATE);
 		NotifyStrings[NUMNOTIFIES-1].PrintLevel = printlevel;
-		addtype = NEWLINE;
+		addtype = NEW_LINE;
 	}
 
 	V_FreeBrokenLines (lines);
@@ -530,7 +532,7 @@ void C_AddNotifyString (int printlevel, const char *source)
 	switch (source[len-1])
 	{
 	case '\r':	addtype = REPLACELINE;	break;
-	case '\n':	addtype = NEWLINE;		break;
+	case '\n':	addtype = NEW_LINE;		break;
 	default:	addtype = APPENDLINE;	break;
 	}
 
@@ -573,6 +575,9 @@ extern bool gameisdead;
 
 int VPrintf (int printlevel, const char *format, va_list parms)
 {
+#ifdef __DOOM__
+	common->VPrintf(format, parms);
+#endif
 	if (gameisdead)
 		return 0;
 
@@ -600,7 +605,7 @@ int STACK_ARGS Printf (const char *format, ...)
 
 	va_start (argptr, format);
 	count = VPrintf (PRINT_HIGH, format, argptr);
-	va_end (argptr);
+	va_end(argptr);
 
 	return count;
 }
@@ -736,11 +741,11 @@ static void C_DrawNotifyText ()
 
 			if (j < NOTIFYFADETIME)
 			{
-				alpha = OPAQUE * j / NOTIFYFADETIME;
+				alpha = FULLY_OPAQUE * j / NOTIFYFADETIME;
 			}
 			else
 			{
-				alpha = OPAQUE;
+				alpha = FULLY_OPAQUE;
 			}
 
 			if (NotifyStrings[i].PrintLevel >= PRINTLEVELS)

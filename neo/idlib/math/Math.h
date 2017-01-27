@@ -45,8 +45,10 @@ If you have questions concerning this license or the applicable additional terms
 #undef FLT_EPSILON
 #endif
 
+#ifndef DEG2RAD
 #define DEG2RAD(a)				( (a) * idMath::M_DEG2RAD )
 #define RAD2DEG(a)				( (a) * idMath::M_RAD2DEG )
+#endif
 
 #define SEC2MS(t)				( idMath::Ftoi( (t) * idMath::M_SEC2MS ) )
 #define MS2SEC(t)				( (t) * idMath::M_MS2SEC )
@@ -443,6 +445,9 @@ public:
 	
 	static float				LerpToWithScale( const float cur, const float dest, const float scale );
 	
+#ifdef PI
+#undef PI
+#endif
 	static const float			PI;							// pi
 	static const float			TWO_PI;						// pi * 2
 	static const float			HALF_PI;					// pi / 2

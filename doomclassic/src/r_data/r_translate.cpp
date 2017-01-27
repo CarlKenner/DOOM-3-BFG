@@ -563,7 +563,7 @@ void FRemapTable::AddToTranslation(const char *range)
 	}
 	catch (CRecoverableError &err)
 	{
-		Printf("Error in translation '%s':\n%s\n", range, err.GetMessage());
+		Printf("Error in translation '%s':\n%s\n", range, err.GetMsg());
 	}
 }
 

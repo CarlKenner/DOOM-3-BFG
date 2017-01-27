@@ -37,7 +37,6 @@
 #include <string>
 #include "doomtype.h" // Printf
 #include "d_player.h"
-#undef OPAQUE
 #include "g_game.h" // G_Add...
 #include "p_local.h" // P_TryMove
 #include "r_utility.h" // viewpitch

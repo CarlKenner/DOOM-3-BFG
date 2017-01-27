@@ -56,6 +56,8 @@
 #include "v_text.h"
 #include "m_argv.h"
 
+#undef OPTIONAL
+
 void ParseOldDecoration(FScanner &sc, EDefinitionType def);
 
 //==========================================================================
@@ -794,7 +796,7 @@ static bool ParsePropertyParams(FScanner &sc, FPropertyInfo *prop, AActor *defau
 	}
 	catch (CRecoverableError &error)
 	{
-		sc.ScriptError("%s", error.GetMessage());
+		sc.ScriptError("%s", error.GetMsg());
 	}
 
 	return true;
@@ -1124,7 +1126,7 @@ static FActorInfo *ParseActorHeader(FScanner &sc, Baggage *bag)
 	}
 	catch (CRecoverableError &err)
 	{
-		sc.ScriptError("%s", err.GetMessage());
+		sc.ScriptError("%s", err.GetMsg());
 		return NULL;
 	}
 }

@@ -2057,7 +2057,7 @@ FUNC(LS_Sector_SetTranslucent)
 		FSectorTagIterator itr(arg0);
 		while ((secnum = itr.Next()) >= 0)
 		{
-			sectors[secnum].SetAlpha(arg1, Scale(arg2, OPAQUE, 255));
+			sectors[secnum].SetAlpha(arg1, Scale(arg2, FULLY_OPAQUE, 255));
 			sectors[secnum].ChangeFlags(arg1, ~PLANEF_ADDITIVE, arg3? PLANEF_ADDITIVE:0);
 		}
 		return true;

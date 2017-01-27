@@ -184,8 +184,8 @@ CCMD (map)
 		}
 		catch(CRecoverableError &error)
 		{
-			if (error.GetMessage())
-				Printf("%s", error.GetMessage());
+			if (error.GetMsg())
+				Printf("%s", error.GetMsg());
 		}
 	}
 	else
@@ -224,8 +224,8 @@ CCMD(recordmap)
 		}
 		catch (CRecoverableError &error)
 		{
-			if (error.GetMessage())
-				Printf("%s", error.GetMessage());
+			if (error.GetMsg())
+				Printf("%s", error.GetMsg());
 		}
 	}
 	else

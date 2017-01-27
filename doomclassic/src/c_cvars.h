@@ -36,6 +36,21 @@
 
 #include "doomtype.h"
 #include "tarray.h"
+#ifdef __DOOM__
+#include "sys/sys_defines.h"
+#include "sys/sys_builddefines.h"
+#include "sys/sys_includes.h"
+#include "sys/sys_assert.h"
+#include "sys/sys_types.h"
+#include "sys/sys_intrinsics.h"
+#include "sys/sys_threading.h"
+#include "CmdArgs.h"
+#include "Containers/Sort.h"
+#include "Str.h"
+#include "framework/CmdSystem.h"
+class idDict;
+#include "framework/CVarSystem.h"
+#endif
 
 /*
 ==========================================================
@@ -45,6 +60,7 @@ CVARS (console variables)
 ==========================================================
 */
 
+#ifndef __DOOM__
 enum
 {
 	CVAR_ARCHIVE		= 1,	// set to cause it to be saved to config
@@ -64,6 +80,7 @@ enum
 	CVAR_MOD			= 8192,	// cvar was defined by a mod
 	CVAR_IGNORE			= 16384,// do not send cvar across the network/inaccesible from ACS (dummy mod cvar)
 };
+#endif
 
 union UCVarValue
 {

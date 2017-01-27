@@ -1172,7 +1172,7 @@ void R_Subsector (subsector_t *sub)
 			if (!(fakeFloor->flags & FF_RENDERPLANES)) continue;
 			if (fakeFloor->alpha == 0) continue;
 			if (fakeFloor->flags & FF_THISINSIDE && fakeFloor->flags & FF_INVERTSECTOR) continue;
-			fakeAlpha = MIN(Scale(fakeFloor->alpha, OPAQUE, 255), OPAQUE);
+			fakeAlpha = MIN(Scale(fakeFloor->alpha, FULLY_OPAQUE, 255), FULLY_OPAQUE);
 			if (fakeFloor->validcount != validcount)
 			{
 				fakeFloor->validcount = validcount;
@@ -1233,7 +1233,7 @@ void R_Subsector (subsector_t *sub)
 			if (!(fakeFloor->flags & FF_RENDERPLANES)) continue;
 			if (fakeFloor->alpha == 0) continue;
 			if (!(fakeFloor->flags & FF_THISINSIDE) && (fakeFloor->flags & (FF_SWIMMABLE|FF_INVERTSECTOR)) == (FF_SWIMMABLE|FF_INVERTSECTOR)) continue;
-			fakeAlpha = MIN(Scale(fakeFloor->alpha, OPAQUE, 255), OPAQUE);
+			fakeAlpha = MIN(Scale(fakeFloor->alpha, FULLY_OPAQUE, 255), FULLY_OPAQUE);
 
 			if (fakeFloor->validcount != validcount)
 			{

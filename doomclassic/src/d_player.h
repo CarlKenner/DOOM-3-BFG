@@ -371,7 +371,7 @@ public:
 	APlayerPawn	*mo;
 	BYTE		playerstate;
 	ticcmd_t	cmd;
-	usercmd_t	original_cmd;
+	gz_usercmd_t	original_cmd;
 	DWORD		original_oldbuttons;
 
 	userinfo_t	userinfo;				// [RH] who is this?

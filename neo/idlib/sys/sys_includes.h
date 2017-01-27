@@ -48,14 +48,18 @@ If you have questions concerning this license or the applicable additional terms
 #ifndef _D3SDK
 #ifndef GAME_DLL
 
+#ifndef WINVER
 #define WINVER				0x501
+#endif
 
 #include <winsock2.h>
 #include <mmsystem.h>
 #include <mmreg.h>
 
+#ifndef DIRECTINPUT_VERSION
 #define DIRECTINPUT_VERSION  0x0800			// was 0x0700 with the old mssdk
 #define DIRECTSOUND_VERSION  0x0800
+#endif
 
 #ifdef _MSC_VER
 #include <dsound.h>

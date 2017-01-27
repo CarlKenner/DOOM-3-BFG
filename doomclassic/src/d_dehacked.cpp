@@ -2938,7 +2938,7 @@ static bool LoadDehSupp ()
 	{
 		// Don't abort if DEHSUPP loading fails. 
 		// Just print the message and continue.
-		Printf("%s\n", err.GetMessage());
+		Printf("%s\n", err.GetMsg());
 		return false;
 	}
 }

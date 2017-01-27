@@ -47,6 +47,8 @@
 #include "doomstat.h"
 #include "templates.h"
 
+#undef GetCharWidth
+
 //
 // DrawChar
 //
@@ -258,6 +260,7 @@ void DCanvas::DrawTextV(FFont *font, int normalcolor, int x, int y, const char *
 	va_end(taglist);
 }
 
+#undef DrawText
 void STACK_ARGS DCanvas::DrawText (FFont *font, int normalcolor, int x, int y, const char *string, ...)
 {
 	va_list tags;

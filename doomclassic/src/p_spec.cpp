@@ -917,8 +917,8 @@ static void SetupFloorPortal (AStackPoint *point)
 	if (Sector->SkyBoxes[sector_t::floor] != NULL && Sector->SkyBoxes[sector_t::floor]->bAlways)
 	{
 		Sector->SkyBoxes[sector_t::floor]->Mate = point;
-		if (Sector->GetAlpha(sector_t::floor) == OPAQUE)
-			Sector->SetAlpha(sector_t::floor, Scale (point->args[0], OPAQUE, 255));
+		if (Sector->GetAlpha(sector_t::floor) == FULLY_OPAQUE)
+			Sector->SetAlpha(sector_t::floor, Scale (point->args[0], FULLY_OPAQUE, 255));
 	}
 }
 
@@ -930,8 +930,8 @@ static void SetupCeilingPortal (AStackPoint *point)
 	if (Sector->SkyBoxes[sector_t::ceiling] != NULL && Sector->SkyBoxes[sector_t::ceiling]->bAlways)
 	{
 		Sector->SkyBoxes[sector_t::ceiling]->Mate = point;
-		if (Sector->GetAlpha(sector_t::ceiling) == OPAQUE)
-			Sector->SetAlpha(sector_t::ceiling, Scale (point->args[0], OPAQUE, 255));
+		if (Sector->GetAlpha(sector_t::ceiling) == FULLY_OPAQUE)
+			Sector->SetAlpha(sector_t::ceiling, Scale (point->args[0], FULLY_OPAQUE, 255));
 	}
 }
 
@@ -965,7 +965,7 @@ static void SetPortal(sector_t *sector, int plane, ASkyViewpoint *portal, fixed_
 		if (sector->SkyBoxes[sector_t::ceiling] == NULL || !sector->SkyBoxes[sector_t::ceiling]->bAlways) 
 		{
 			sector->SkyBoxes[sector_t::ceiling] = portal;
-			if (sector->GetAlpha(sector_t::ceiling) == OPAQUE)
+			if (sector->GetAlpha(sector_t::ceiling) == FULLY_OPAQUE)
 				sector->SetAlpha(sector_t::ceiling, alpha);
 
 			if (!portal->bAlways) sector->SetTexture(sector_t::ceiling, skyflatnum);
@@ -977,7 +977,7 @@ static void SetPortal(sector_t *sector, int plane, ASkyViewpoint *portal, fixed_
 		{
 			sector->SkyBoxes[sector_t::floor] = portal;
 		}
-		if (sector->GetAlpha(sector_t::floor) == OPAQUE)
+		if (sector->GetAlpha(sector_t::floor) == FULLY_OPAQUE)
 			sector->SetAlpha(sector_t::floor, alpha);
 
 		if (!portal->bAlways) sector->SetTexture(sector_t::floor, skyflatnum);
@@ -1052,7 +1052,7 @@ void P_SpawnPortal(line_t *line, int sectortag, int plane, int alpha)
 			fixed_t y1 = fixed_t((SQWORD(line->v1->y) + SQWORD(line->v2->y)) >> 1);
 			fixed_t x2 = fixed_t((SQWORD(lines[i].v1->x) + SQWORD(lines[i].v2->x)) >> 1);
 			fixed_t y2 = fixed_t((SQWORD(lines[i].v1->y) + SQWORD(lines[i].v2->y)) >> 1);
-			fixed_t alpha = Scale (lines[i].args[4], OPAQUE, 255);
+			fixed_t alpha = Scale (lines[i].args[4], FULLY_OPAQUE, 255);
 
 			AStackPoint *anchor = Spawn<AStackPoint>(x1, y1, 0, NO_REPLACE);
 			AStackPoint *reference = Spawn<AStackPoint>(x2, y2, 0, NO_REPLACE);

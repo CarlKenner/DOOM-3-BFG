@@ -9,10 +9,14 @@
 #define _WIN32_WINNT 0x0501			// Support the mouse wheel and session notification.
 #define _WIN32_IE 0x0500
 #endif
+#ifndef DIRECTINPUT_VERSION
 #define DIRECTINPUT_VERSION 0x800
 #define DIRECTDRAW_VERSION 0x0300
+#endif
 
+#ifndef __DOOM__
 #define DWORD WINDOWS_DWORD	// I don't want to depend on this throughout the GL code!
+#endif
 
 #ifdef _MSC_VER
 #pragma warning(disable : 4995)     // MIPS
@@ -20,7 +24,7 @@
 
 #include <windows.h>
 #include <mmsystem.h>
-#include <winsock.h>
+#include <winsock2.h>
 #ifndef __WINE__
 #include <dshow.h>
 #endif
@@ -103,7 +107,6 @@ inline T max( T a, T b) { return (((a)>(b)) ? (a) : (b)); }
 #endif
 
 #undef S_NORMAL
-#undef OPAQUE
 
 
 #ifdef _MSC_VER

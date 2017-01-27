@@ -2659,7 +2659,7 @@ void AM_drawPlayers ()
 			continue;
 		}
 
-		if (p->mo->alpha < OPAQUE)
+		if (p->mo->alpha < FULLY_OPAQUE)
 		{
 			color = AMColors[AMColors.AlmostBackgroundColor];
 		}

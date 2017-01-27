@@ -64,7 +64,7 @@ struct zdemoheader_s {
 	BYTE	consoleplayer;
 };
 
-struct usercmd_t
+struct gz_usercmd_t
 {
 	DWORD	buttons;
 	short	pitch;			// up/down
@@ -77,7 +77,7 @@ struct usercmd_t
 
 class FArchive;
 
-FArchive &operator<< (FArchive &arc, usercmd_t &cmd);
+FArchive &operator<< (FArchive &arc, gz_usercmd_t &cmd);
 
 // When transmitted, the above message is preceded by a byte
 // indicating which fields are actually present in the message.
@@ -230,9 +230,9 @@ void StartChunk (int id, BYTE **stream);
 void FinishChunk (BYTE **stream);
 void SkipChunk (BYTE **stream);
 
-int UnpackUserCmd (usercmd_t *ucmd, const usercmd_t *basis, BYTE **stream);
-int PackUserCmd (const usercmd_t *ucmd, const usercmd_t *basis, BYTE **stream);
-int WriteUserCmdMessage (usercmd_t *ucmd, const usercmd_t *basis, BYTE **stream);
+int UnpackUserCmd (gz_usercmd_t *ucmd, const gz_usercmd_t *basis, BYTE **stream);
+int PackUserCmd (const gz_usercmd_t *ucmd, const gz_usercmd_t *basis, BYTE **stream);
+int WriteUserCmdMessage (gz_usercmd_t *ucmd, const gz_usercmd_t *basis, BYTE **stream);
 
 struct ticcmd_t;
 

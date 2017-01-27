@@ -31,7 +31,7 @@
 // plus a checksum for internal state consistency.
 struct ticcmd_t
 {
-	usercmd_t	ucmd;
+	gz_usercmd_t	ucmd;
 	SWORD		consistancy;	// checks for net game
 };
 

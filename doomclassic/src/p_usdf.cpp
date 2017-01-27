@@ -505,7 +505,7 @@ bool P_ParseUSDF(int lumpnum, FileReader *lump, int lumplen)
 	}
 	catch(CRecoverableError &err)
 	{
-		Printf("%s", err.GetMessage());
+		Printf("%s", err.GetMsg());
 		return false;
 	}
 }

@@ -3337,9 +3337,9 @@ void AActor::Tick ()
 			if (visdir > 0)
 			{
 				alpha += 0x800;
-				if (alpha >= OPAQUE)
+				if (alpha >= FULLY_OPAQUE)
 				{
-					alpha = OPAQUE;
+					alpha = FULLY_OPAQUE;
 					visdir = -1;
 				}
 			}
@@ -3360,9 +3360,9 @@ void AActor::Tick ()
 			if (visdir > 0)
 			{
 				alpha += 2*FRACUNIT/TICRATE;
-				if (alpha > OPAQUE)
+				if (alpha > FULLY_OPAQUE)
 				{
-					alpha = OPAQUE;
+					alpha = FULLY_OPAQUE;
 					visdir = 0;
 				}
 			}

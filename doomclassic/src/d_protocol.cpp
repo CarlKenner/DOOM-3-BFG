@@ -135,7 +135,7 @@ void WriteFloat (float v, BYTE **stream)
 }
 
 // Returns the number of bytes read
-int UnpackUserCmd (usercmd_t *ucmd, const usercmd_t *basis, BYTE **stream)
+int UnpackUserCmd (gz_usercmd_t *ucmd, const gz_usercmd_t *basis, BYTE **stream)
 {
 	BYTE *start = *stream;
 	BYTE flags;
@@ -144,12 +144,12 @@ int UnpackUserCmd (usercmd_t *ucmd, const usercmd_t *basis, BYTE **stream)
 	{
 		if (basis != ucmd)
 		{
-			memcpy (ucmd, basis, sizeof(usercmd_t));
+			memcpy (ucmd, basis, sizeof(gz_usercmd_t));
 		}
 	}
 	else
 	{
-		memset (ucmd, 0, sizeof(usercmd_t));
+		memset (ucmd, 0, sizeof(gz_usercmd_t));
 	}
 
 	flags = ReadByte (stream);
@@ -198,12 +198,12 @@ int UnpackUserCmd (usercmd_t *ucmd, const usercmd_t *basis, BYTE **stream)
 }
 
 // Returns the number of bytes written
-int PackUserCmd (const usercmd_t *ucmd, const usercmd_t *basis, BYTE **stream)
+int PackUserCmd (const gz_usercmd_t *ucmd, const gz_usercmd_t *basis, BYTE **stream)
 {
 	BYTE flags = 0;
 	BYTE *temp = *stream;
 	BYTE *start = *stream;
-	usercmd_t blank;
+	gz_usercmd_t blank;
 	DWORD buttons_changed;
 
 	if (basis == NULL)
@@ -292,7 +292,7 @@ FArchive &operator<< (FArchive &arc, ticcmd_t &cmd)
 	return arc << cmd.consistancy << cmd.ucmd;
 }
 
-FArchive &operator<< (FArchive &arc, usercmd_t &cmd)
+FArchive &operator<< (FArchive &arc, gz_usercmd_t &cmd)
 {
 	BYTE bytes[256];
 	BYTE *stream = bytes;
@@ -312,7 +312,7 @@ FArchive &operator<< (FArchive &arc, usercmd_t &cmd)
 	return arc;
 }
 
-int WriteUserCmdMessage (usercmd_t *ucmd, const usercmd_t *basis, BYTE **stream)
+int WriteUserCmdMessage (gz_usercmd_t *ucmd, const gz_usercmd_t *basis, BYTE **stream)
 {
 	if (basis == NULL)
 	{

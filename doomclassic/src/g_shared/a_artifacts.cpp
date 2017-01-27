@@ -401,7 +401,7 @@ void APowerInvulnerable::DoEffect ()
 			// Don't mess with the translucency settings if an
 			// invisibility powerup is active.
 			Owner->RenderStyle = STYLE_Translucent;
-			if (!(level.time & 7) && Owner->alpha > 0 && Owner->alpha < OPAQUE)
+			if (!(level.time & 7) && Owner->alpha > 0 && Owner->alpha < FULLY_OPAQUE)
 			{
 				if (Owner->alpha == HX_SHADOW)
 				{
@@ -458,7 +458,7 @@ void APowerInvulnerable::EndEffect ()
 			// Don't mess with the translucency settings if an
 			// invisibility powerup is active.
 			Owner->RenderStyle = STYLE_Normal;
-			Owner->alpha = OPAQUE;
+			Owner->alpha = FULLY_OPAQUE;
 		}
 	}
 	else if (Mode == NAME_Reflective)
@@ -603,7 +603,7 @@ void APowerInvisibility::DoEffect ()
 	// Due to potential interference with other PowerInvisibility items
 	// the effect has to be refreshed each tic.
 	fixed_t ts = (Strength/100) * (special1 + 1); if (ts > FRACUNIT) ts = FRACUNIT;
-	Owner->alpha = clamp<fixed_t>((OPAQUE - ts), 0, OPAQUE);
+	Owner->alpha = clamp<fixed_t>((FULLY_OPAQUE - ts), 0, FULLY_OPAQUE);
 	switch (Mode)
 	{
 	case (NAME_Fuzzy):
@@ -631,7 +631,7 @@ void APowerInvisibility::DoEffect ()
 		break;
 	default: // Something's wrong
 		Owner->RenderStyle = STYLE_Normal;
-		Owner->alpha = OPAQUE;
+		Owner->alpha = FULLY_OPAQUE;
 		break;
 	}
 }
@@ -652,7 +652,7 @@ void APowerInvisibility::EndEffect ()
 		Owner->flags5 &= ~(flags5 & INVISIBILITY_FLAGS5);
 
 		Owner->RenderStyle = STYLE_Normal;
-		Owner->alpha = OPAQUE;
+		Owner->alpha = FULLY_OPAQUE;
 
 		// Check whether there are other invisibility items and refresh their effect.
 		// If this isn't done there will be one incorrectly drawn frame when this
@@ -682,14 +682,14 @@ int APowerInvisibility::AlterWeaponSprite (visstyle_t *vis)
 	if (changed == 0 && EffectTics < 4*32 && !(EffectTics & 8))
 	{
 		vis->RenderStyle = STYLE_Normal;
-		vis->alpha = OPAQUE;
+		vis->alpha = FULLY_OPAQUE;
 		return 1;
 	}
 	else if (changed == 1)
 	{
 		// something else set the weapon sprite back to opaque but this item is still active.
 		fixed_t ts = (Strength/100) * (special1 + 1); if (ts > FRACUNIT) ts = FRACUNIT;
-		vis->alpha = clamp<fixed_t>((OPAQUE - ts), 0, OPAQUE);
+		vis->alpha = clamp<fixed_t>((FULLY_OPAQUE - ts), 0, FULLY_OPAQUE);
 		switch (Mode)
 		{
 		case (NAME_Fuzzy):
@@ -721,7 +721,7 @@ int APowerInvisibility::AlterWeaponSprite (visstyle_t *vis)
 	// Handling of Strife-like cumulative invisibility powerups, the weapon itself shouldn't become invisible
 	if ((vis->alpha < TRANSLUC25 && special1 > 0) || (vis->alpha == 0))
 	{
-		vis->alpha = clamp<fixed_t>((OPAQUE - (Strength/100)), 0, OPAQUE);
+		vis->alpha = clamp<fixed_t>((FULLY_OPAQUE - (Strength/100)), 0, FULLY_OPAQUE);
 		vis->colormap = SpecialColormaps[INVERSECOLORMAP].Colormap;
 	}
 	return -1;	// This item is valid so another one shouldn't reset the translucency
@@ -1166,7 +1166,7 @@ IMPLEMENT_CLASS (APlayerSpeedTrail)
 
 void APlayerSpeedTrail::Tick ()
 {
-	const int fade = OPAQUE*6/10/8;
+	const int fade = FULLY_OPAQUE*6/10/8;
 	if (alpha <= fade)
 	{
 		Destroy ();

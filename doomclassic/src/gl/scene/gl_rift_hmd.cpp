@@ -1,4 +1,7 @@
 #define NOMINMAX
+#ifdef __DOOM__
+#include <winsock2.h>
+#endif
 #include "gl/scene/gl_rift_hmd.h"
 #include "gl/scene/gl_hudtexture.h"
 #include "gl/system/gl_system.h"
@@ -6,6 +9,9 @@
 #include "gl/renderer/gl_renderstate.h"
 #include "gl/renderer/gl_renderer.h"
 #include "gl/data/gl_vertexbuffer.h"
+#ifdef __DOOM__
+#include "vr/Vr.h"
+#endif
 #include <cstring>
 #include <string>
 #include <sstream>
@@ -124,17 +130,26 @@ void RiftHmd::destroy() {
 		hmd = nullptr;
 	}
 	ovr_Shutdown();
+#ifdef __DOOM__	
+	commonVr->hmdSession = NULL;
+#endif
 }
 
 ovrResult RiftHmd::init_tracking() 
 {
 	if (hmd) return ovrSuccess; // already initialized
+
+#ifdef __DOOM__
+	hmd = commonVr->hmdSession;
+	return hmd ? ovrSuccess : ovrError_NoHmd;
+#else
 	ovrResult result = ovr_Initialize(nullptr);
 	if OVR_FAILURE(result)
 		return result;
 	ovrGraphicsLuid luid;
 	ovr_Create(&hmd, &luid);
 	return result;
+#endif
 }
 
 

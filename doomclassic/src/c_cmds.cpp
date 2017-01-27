@@ -384,8 +384,8 @@ CCMD (changemap)
 		}
 		catch(CRecoverableError &error)
 		{
-			if (error.GetMessage())
-				Printf("%s", error.GetMessage());
+			if (error.GetMsg())
+				Printf("%s", error.GetMsg());
 		}
 	}
 	else

@@ -1245,7 +1245,7 @@ static bool CheckCachedNodes(MapData *map)
 	}
 	catch (CRecoverableError &error)
 	{
-		Printf ("Error loading nodes: %s\n", error.GetMessage());
+		Printf ("Error loading nodes: %s\n", error.GetMsg());
 
 		if (subsectors != NULL)
 		{
@@ -1296,7 +1296,7 @@ CCMD(clearnodecache)
 	}
 	catch (CRecoverableError &err)
 	{
-		Printf("%s", err.GetMessage());
+		Printf("%s", err.GetMsg());
 		return;
 	}
 

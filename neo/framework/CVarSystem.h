@@ -100,7 +100,22 @@ typedef enum
 	CVAR_INIT				= BIT( 15 ),	// can only be set from the command-line
 	CVAR_ROM				= BIT( 16 ),	// display only, cannot be set by user at all
 	CVAR_ARCHIVE			= BIT( 17 ),	// set to cause it to be saved to a config file
-	CVAR_MODIFIED			= BIT( 18 )	// set when the variable is modified
+	CVAR_MODIFIED			= BIT( 18 ),	// set when the variable is modified
+
+	CVAR_USERINFO = BIT( 9 ),	// added to userinfo  when changed
+	CVAR_NOSET = CVAR_INIT,	// don't allow change from console at all,
+													// but can be set from the command line
+	CVAR_LATCH = BIT( 19 ),	// save changes until server restart
+	CVAR_UNSETTABLE = BIT( 20 ),	// can unset this var from console
+	CVAR_DEMOSAVE = BIT( 21 ),	// save the value of this cvar in a demo
+	CVAR_ISDEFAULT = BIT( 22 ),	// is cvar unchanged since creation?
+	CVAR_AUTO = BIT( 23 ),	// allocated; needs to be freed when destroyed
+	CVAR_NOINITCALL = BIT( 24 ),	// don't call callback at game start
+	CVAR_GLOBALCONFIG = BIT ( 25 ),	// cvar is saved to global config section
+	CVAR_VIDEOCONFIG = BIT ( 26 ), // cvar is saved to video config section (not implemented)
+	CVAR_NOSAVE = BIT ( 27 ), // when used with CVAR_SERVERINFO, do not save var to savegame
+	CVAR_MOD = BIT ( 28 ),	// cvar was defined by a mod
+	CVAR_IGNORE = BIT ( 29 ),// do not send cvar across the network/inaccesible from ACS (dummy mod cvar)
 } cvarFlags_t;
 
 

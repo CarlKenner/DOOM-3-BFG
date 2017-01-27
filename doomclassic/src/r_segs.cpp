@@ -560,7 +560,7 @@ void R_RenderFakeWall(drawseg_t *ds, int x1, int x2, F3DFloor *rover)
 	int i;
 	fixed_t xscale, yscale;
 
-	fixed_t Alpha = Scale(rover->alpha, OPAQUE, 255);
+	fixed_t Alpha = Scale(rover->alpha, FULLY_OPAQUE, 255);
 	ESPSResult drawmode;
 	drawmode = R_SetPatchStyle (LegacyRenderStyles[rover->flags & FF_ADDITIVETRANS ? STYLE_Add : STYLE_Translucent],
 		Alpha, 0, 0);

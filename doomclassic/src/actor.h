@@ -416,9 +416,7 @@ enum ActorRenderFlag
 #define TRANSLUC75			((FRACUNIT*3)/4)
 
 // <wingdi.h> also #defines OPAQUE
-#ifndef OPAQUE
-#define OPAQUE				(FRACUNIT)
-#endif
+#define FULLY_OPAQUE				(FRACUNIT)
 
 // This translucency value produces the closest match to Heretic's TINTTAB.
 // ~40% of the value of the overlaid image shows through.

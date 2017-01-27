@@ -56,7 +56,7 @@ public:
 		strncpy (m_Message, message, MAX_ERRORTEXT-1);
 		m_Message[MAX_ERRORTEXT-1] = '\0';
 	}
-	const char *GetMessage (void) const
+	const char *GetMsg (void) const
 	{
 		if (m_Message[0] != '\0')
 			return (const char *)m_Message;

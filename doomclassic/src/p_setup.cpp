@@ -3804,7 +3804,7 @@ void P_SetupLevel (const char *lumpname, int position)
 			}
 			catch (CRecoverableError &error)
 			{
-				Printf ("Error loading nodes: %s\n", error.GetMessage());
+				Printf ("Error loading nodes: %s\n", error.GetMsg());
 
 				ForceNodeBuild = true;
 				if (subsectors != NULL)

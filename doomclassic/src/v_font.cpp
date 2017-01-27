@@ -96,6 +96,8 @@ The FON2 header is followed by variable length data:
 #include "colormatcher.h"
 #include "v_palette.h"
 
+#undef GetCharWidth
+
 // MACROS ------------------------------------------------------------------
 
 #define DEFAULT_LOG_COLOR	PalEntry(223,223,223)

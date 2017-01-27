@@ -63,7 +63,7 @@ void A_Unblock(AActor *self, bool drop)
 	// [RH] Andy Baker's stealth monsters
 	if (self->flags & MF_STEALTH)
 	{
-		self->alpha = OPAQUE;
+		self->alpha = FULLY_OPAQUE;
 		self->visdir = 0;
 	}
 
@@ -180,7 +180,7 @@ DEFINE_ACTION_FUNCTION(AActor, A_FreezeDeath)
 	// [RH] Andy Baker's stealth monsters
 	if (self->flags & MF_STEALTH)
 	{
-		self->alpha = OPAQUE;
+		self->alpha = FULLY_OPAQUE;
 		self->visdir = 0;
 	}
 

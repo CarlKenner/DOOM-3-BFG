@@ -233,7 +233,7 @@ void DFsScript::ParseScript(char *position)
 	}
 	catch (CRecoverableError &err)
 	{
-		Printf ("%s\n", err.GetMessage());
+		Printf ("%s\n", err.GetMsg());
 	}
 	
 	// dont clear global vars!

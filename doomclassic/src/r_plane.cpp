@@ -1048,7 +1048,7 @@ int R_DrawPlanes ()
 			// kg3D - draw only real planes now
 			if(pl->sky >= 0) {
 				vpcount++;
-				R_DrawSinglePlane (pl, OPAQUE, false, false);
+				R_DrawSinglePlane (pl, FULLY_OPAQUE, false, false);
 			}
 		}
 	}
@@ -1117,7 +1117,7 @@ void R_DrawSinglePlane (visplane_t *pl, fixed_t alpha, bool additive, bool maske
 
 		if (!masked && !additive)
 		{ // If we're not supposed to see through this plane, draw it opaque.
-			alpha = OPAQUE;
+			alpha = FULLY_OPAQUE;
 		}
 		else if (!tex->bMasked)
 		{ // Don't waste time on a masked texture if it isn't really masked.
@@ -1207,7 +1207,7 @@ void R_DrawSkyBoxes ()
 
 		if (pl->right < pl->left || !r_skyboxes || numskyboxes == MAX_SKYBOX_PLANES)
 		{
-			R_DrawSinglePlane (pl, OPAQUE, false, false);
+			R_DrawSinglePlane (pl, FULLY_OPAQUE, false, false);
 			*freehead = pl;
 			freehead = &pl->next;
 			continue;
@@ -1561,13 +1561,13 @@ void R_DrawNormalPlane (visplane_t *pl, fixed_t alpha, bool additive, bool maske
 	{
 		if (masked)
 		{
-			if (alpha < OPAQUE || additive)
+			if (alpha < FULLY_OPAQUE || additive)
 			{
 				if (!additive)
 				{
 					spanfunc = R_DrawSpanMaskedTranslucent;
 					dc_srcblend = Col2RGB8[alpha>>10];
-					dc_destblend = Col2RGB8[(OPAQUE-alpha)>>10];
+					dc_destblend = Col2RGB8[(FULLY_OPAQUE-alpha)>>10];
 				}
 				else
 				{
@@ -1583,13 +1583,13 @@ void R_DrawNormalPlane (visplane_t *pl, fixed_t alpha, bool additive, bool maske
 		}
 		else
 		{
-			if (alpha < OPAQUE || additive)
+			if (alpha < FULLY_OPAQUE || additive)
 			{
 				if (!additive)
 				{
 					spanfunc = R_DrawSpanTranslucent;
 					dc_srcblend = Col2RGB8[alpha>>10];
-					dc_destblend = Col2RGB8[(OPAQUE-alpha)>>10];
+					dc_destblend = Col2RGB8[(FULLY_OPAQUE-alpha)>>10];
 				}
 				else
 				{

@@ -249,7 +249,7 @@ void FWadCollection::AddFile (const char *filename, FileReader *wadinfo)
 			}
 			catch (CRecoverableError &err)
 			{ // Didn't find file
-				Printf (TEXTCOLOR_RED "%s\n", err.GetMessage());
+				Printf (TEXTCOLOR_RED "%s\n", err.GetMsg());
 				PrintLastError ();
 				return;
 			}
@@ -1654,6 +1654,7 @@ FString::FString (ELumpNum lumpnum)
 //#define WIN32_LEAN_AND_MEAN
 //#include <windows.h>
 
+#ifndef _WINDOWS_
 extern "C" {
 __declspec(dllimport) unsigned long __stdcall FormatMessageA(
     unsigned long dwFlags,
@@ -1667,6 +1668,7 @@ __declspec(dllimport) unsigned long __stdcall FormatMessageA(
 __declspec(dllimport) void * __stdcall LocalFree (void *);
 __declspec(dllimport) unsigned long __stdcall GetLastError ();
 }
+#endif
 
 static void PrintLastError ()
 {
@@ -1677,7 +1679,7 @@ static void PrintLastError ()
 		NULL,
 		GetLastError(),
 		1 << 10 /*MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT)*/, // Default language
-		&lpMsgBuf,
+		(LPSTR)&lpMsgBuf,
 		0,
 		NULL 
 	);

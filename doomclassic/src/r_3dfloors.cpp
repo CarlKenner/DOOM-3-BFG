@@ -14,6 +14,7 @@
 #include "r_plane.h"
 #include "c_cvars.h"
 #include "r_3dfloors.h"
+#undef near
 
 // external variables
 int fake3D;
