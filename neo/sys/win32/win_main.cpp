@@ -1537,6 +1537,7 @@ int WINAPI WinMain( HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLin
 
 	common->Init(0, NULL, lpCmdLine);
 
+#if 0
 	// Carl: if they are trying to launch a classic doom IWAD, then launch doom classic instead
 	for (int i = 1; i < __argc; ++i)
 	{
@@ -1546,6 +1547,7 @@ int WINAPI WinMain( HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLin
 			return 0;
 		}
 	}
+#endif
 
 #if TEST_FPU_EXCEPTIONS != 0
 	common->Printf( Sys_FPU_GetState() );

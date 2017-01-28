@@ -30,6 +30,9 @@ If you have questions concerning this license or the applicable additional terms
 
 #include "globaldata.h"
 #include "doominterface.h"
+#include "sys/win32/win_local.h"
+
+int ClassicWinMain(HINSTANCE hInstance, HINSTANCE nothing, LPSTR cmdline, int nCmdShow);
 
 #define GLOBAL_IMAGE_SCALER	3
 
@@ -126,6 +129,7 @@ void DoomInterface::Startup(int playerscount, bool multiplayer)
 	{
 		::g->screens[i] = base + i * SCREENWIDTH * SCREENHEIGHT;
 	}
+	ClassicWinMain(win32.hInstance, NULL, "", SW_SHOW);
 }
 
 // Carl: needed for Doom 3 BFG Edition's Common.cpp

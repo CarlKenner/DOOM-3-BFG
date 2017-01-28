@@ -30,6 +30,8 @@ If you have questions concerning this license or the applicable additional terms
 #include "precompiled.h"
 #pragma hdrstop
 
+#include "sys/win32/win_local.h"
+
 #include "Common_local.h"
 
 #include "ConsoleHistory.h"
@@ -2126,6 +2128,8 @@ void idCommonLocal::ResetPlayerInput( int playerIndex )
 // RB begin
 #if defined(USE_DOOMCLASSIC)
 
+int ClassicWinMain(HINSTANCE hInstance, HINSTANCE nothing, LPSTR cmdline, int nCmdShow);
+
 /*
 ========================
 idCommonLocal::SwitchToGame
@@ -2137,7 +2141,8 @@ void idCommonLocal::SwitchToGame( currentGame_t newGame )
 	switch (newGame)
 	{
 		case DOOM_CLASSIC:
-			Sys_ReLaunch(" -iwad doom");
+			idealCurrentGame = newGame;
+			//Sys_ReLaunch(" -iwad doom");
 			break;
 		case DOOM2_CLASSIC:
 			Sys_ReLaunch(" -iwad doom2");
